@@ -1,0 +1,2779 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual de Usuario - Sistema POS Lite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #1976d2;
+            --secondary-color: #424242;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --danger-color: #f44336;
+            --bg-color: #f5f5f5;
+            --card-bg: #ffffff;
+            --text-primary: #212121;
+            --text-secondary: #757575;
+            --border-color: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: var(--bg-color);
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 280px;
+            background: var(--secondary-color);
+            color: white;
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+
+        .sidebar h1 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: white;
+        }
+
+        .sidebar .version {
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-bottom: 30px;
+        }
+
+        .nav-section {
+            margin-bottom: 20px;
+        }
+
+        .nav-section h3 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #aaa;
+            margin-bottom: 10px;
+            padding: 5px 0;
+            border-bottom: 1px solid #555;
+        }
+
+        .nav-item {
+            display: block;
+            padding: 10px 15px;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-bottom: 5px;
+            transition: background 0.3s;
+        }
+
+        .nav-item:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .nav-item.active {
+            background: var(--primary-color);
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            padding: 40px;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        /* Sections */
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section h2 {
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .section h3 {
+            color: var(--secondary-color);
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        .section h4 {
+            color: var(--text-primary);
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        /* Alert Boxes */
+        .alert {
+            padding: 15px 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid;
+        }
+
+        .alert-info {
+            background: #e3f2fd;
+            border-color: var(--primary-color);
+            color: #0d47a1;
+        }
+
+        .alert-warning {
+            background: #fff3e0;
+            border-color: var(--warning-color);
+            color: #e65100;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            border-color: var(--success-color);
+            color: #1b5e20;
+        }
+
+        .alert-danger {
+            background: #ffebee;
+            border-color: var(--danger-color);
+            color: #b71c1c;
+        }
+
+        /* Steps */
+        .step {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .step-number {
+            display: inline-block;
+            background: var(--primary-color);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f5f5f5;
+        }
+
+        /* Code Blocks */
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-right: 5px;
+        }
+
+        .badge-primary { background: var(--primary-color); color: white; }
+        .badge-success { background: var(--success-color); color: white; }
+        .badge-warning { background: var(--warning-color); color: white; }
+        .badge-danger { background: var(--danger-color); color: white; }
+
+        /* Print Styles */
+        @media print {
+            .sidebar {
+                display: none;
+            }
+            .main-content {
+                margin-left: 0;
+            }
+            .section {
+                page-break-inside: avoid;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                position: relative;
+                height: auto;
+            }
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .feature-card {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-top: 3px solid var(--primary-color);
+        }
+
+        .feature-card h4 {
+            margin-top: 0;
+            color: var(--primary-color);
+        }
+
+        .workflow {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .workflow-step {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            flex: 1;
+            min-width: 150px;
+            text-align: center;
+            position: relative;
+        }
+
+        .workflow-arrow {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <h1>📘 Manual POS Lite</h1>
+            <div class="version">Versión 1.1 - 2026</div>
+
+            <nav>
+                <div class="nav-section">
+                    <h3>Inicio</h3>
+                    <a href="#introduccion" class="nav-item">Introducción</a>
+                    <a href="#primeros-pasos" class="nav-item">Primeros Pasos</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Configuración</h3>
+                    <a href="#configuracion-inicial" class="nav-item">Configuración Inicial</a>
+                    <a href="#configuracion-tenant" class="nav-item">Configuración por Tenant</a>
+                    <a href="#usuarios-roles" class="nav-item">Usuarios y Roles</a>
+                    <a href="#administracion-avanzada" class="nav-item">Administracion Avanzada</a>
+                    <a href="#ubicaciones" class="nav-item">Ubicaciones</a>
+                    <a href="#cajas" class="nav-item">Cajas Registradoras</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Catálogos Base</h3>
+                    <a href="#categorias" class="nav-item">Categorías</a>
+                    <a href="#unidades" class="nav-item">Unidades de Medida</a>
+                    <a href="#impuestos" class="nav-item">Impuestos y Reglas</a>
+                    <a href="#metodos-pago" class="nav-item">Métodos de Pago</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Productos</h3>
+                    <a href="#productos" class="nav-item">Gestión de Productos</a>
+                    <a href="#inventario" class="nav-item">Control de Inventario</a>
+                    <a href="#lotes" class="nav-item">Gestión de Lotes</a>
+                    <a href="#precios" class="nav-item">Reglas de Precios</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Manufactura</h3>
+                    <a href="#boms" class="nav-item">Listas de Materiales (BOM)</a>
+                    <a href="#produccion" class="nav-item">Órdenes de Producción</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Operaciones</h3>
+                    <a href="#compras" class="nav-item">Registro de Compras</a>
+                    <a href="#terceros" class="nav-item">Terceros (Clientes/Prov.)</a>
+                    <a href="#carga-masiva" class="nav-item">Carga Masiva Excel</a>
+                    <a href="#pos" class="nav-item">Punto de Venta (POS)</a>
+                    <a href="#ventas" class="nav-item">Consulta de Ventas</a>
+                    <a href="#cartera" class="nav-item">Cartera (Crédito)</a>
+                    <a href="#layaway" class="nav-item">Plan Separe</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Facturación DIAN</h3>
+                    <a href="#facturacion-electronica" class="nav-item">Facturación Electrónica</a>
+                </div>
+
+                <div class="nav-section">
+                    <h3>Control</h3>
+                    <a href="#alertas-globales" class="nav-item">Alertas Globales</a>
+                    <a href="#sesiones-caja" class="nav-item">Sesiones de Caja</a>
+                    <a href="#reportes" class="nav-item">Reportes</a>
+                    <a href="#funciones-ia" class="nav-item">Funciones de IA</a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>Manual de Usuario - Sistema POS Lite</h1>
+                <p>Guía completa para el uso del sistema de punto de venta con gestión de inventario, manufactura, multi-tenant y Facturación Electrónica DIAN</p>
+            </div>
+
+            <!-- INTRODUCCIÓN -->
+            <section id="introduccion" class="section">
+                <h2>📖 Introducción</h2>
+                
+                <h3>¿Qué es POS Lite?</h3>
+                <p>POS Lite es un sistema integral de punto de venta diseñado para pequeñas y medianas empresas que necesitan gestionar ventas, inventario, manufactura y múltiples puntos de venta desde una única plataforma.</p>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4>🏪 Multi-Tenant</h4>
+                        <p>Soporte para múltiples empresas con datos completamente separados y seguros</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📦 Inventario Avanzado</h4>
+                        <p>Control por lotes, fechas de vencimiento, FEFO, alertas de stock mínimo</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🏭 Manufactura</h4>
+                        <p>Gestión de listas de materiales (BOM) y órdenes de producción completas</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>💰 Control de Cajas</h4>
+                        <p>Sesiones de caja con apertura/cierre, asignación de cajeros, reportes</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📊 Reportes</h4>
+                        <p>Reportes de ventas, inventario, producción y análisis de desempeño</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🔒 Seguridad</h4>
+                        <p>Sistema de roles y permisos por usuario, RLS a nivel de base de datos</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🧾 Facturación Electrónica</h4>
+                        <p>Generación de XML FE en modo dual, integración con proveedores tecnológicos DIAN (CUFE, resoluciones, firmas)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📥 Carga Masiva</h4>
+                        <p>Importación masiva de productos y terceros desde Excel con validaciones y seguimiento de errores</p>
+                    </div>
+                </div>
+
+                <h3>Características Principales</h3>
+                <ul>
+                    <li><strong>Gestión Multi-Ubicación:</strong> Controle múltiples sucursales o bodegas desde un solo sistema</li>
+                    <li><strong>Productos Flexibles:</strong> Productos simples, con variantes, kits, servicios y manufacturados</li>
+                    <li><strong>Descuentos Duales:</strong> Aplique descuentos por porcentaje o monto fijo simultáneamente</li>
+                    <li><strong>Impuestos Automáticos:</strong> Reglas de impuestos por producto, categoría o ubicación</li>
+                    <li><strong>Facturación Electrónica DIAN:</strong> Modo dual con XML FE, CUFE, resoluciones y seguimiento por venta</li>
+                    <li><strong>Terceros Completos:</strong> Clientes y proveedores con datos fiscales, código DANE, régimen tributario</li>
+                    <li><strong>Carga Masiva Excel:</strong> Importación de productos y terceros con plantillas descargables y log de errores</li>
+                    <li><strong>Plan Separe:</strong> Sistema completo de apartados con pagos parciales</li>
+                    <li><strong>Trazabilidad Completa:</strong> Seguimiento de lotes, consumo de componentes, historial de movimientos</li>
+                </ul>
+
+                <div class="alert alert-info">
+                    <strong>💡 Sugerencia:</strong> Este manual está organizado por módulos. Recomendamos comenzar con la Configuración Inicial si es la primera vez que usa el sistema.
+                </div>
+            </section>
+
+            <!-- PRIMEROS PASOS -->
+            <section id="primeros-pasos" class="section">
+                <h2>🚀 Primeros Pasos</h2>
+
+                <h3>Requisitos del Sistema</h3>
+                <ul>
+                    <li>Navegador web moderno (Chrome, Firefox, Edge, Safari)</li>
+                    <li>Conexión a internet estable</li>
+                    <li>Resolución mínima de pantalla: 1280x720</li>
+                </ul>
+
+                <h3>Acceso al Sistema</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Abra su navegador web y acceda a la URL proporcionada por su administrador
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    En la pantalla de inicio de sesión, ingrese su correo electrónico y contraseña
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Haga clic en "Iniciar Sesión"
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Importante:</strong> Si es su primer acceso, cambie su contraseña inmediatamente desde el menú de Configuración.
+                </div>
+
+                <h3>Navegación del Sistema</h3>
+                <p>El sistema utiliza un menú lateral izquierdo con las siguientes secciones principales:</p>
+                <ul>
+                    <li><strong>Dashboard:</strong> Vista general y estadísticas</li>
+                    <li><strong>Configuración:</strong> Ajustes generales del sistema</li>
+                    <li><strong>Catálogos:</strong> Datos maestros (productos, clientes, etc.)</li>
+                    <li><strong>Operaciones:</strong> Transacciones diarias (ventas, compras)</li>
+                    <li><strong>Reportes:</strong> Análisis y consultas</li>
+                </ul>
+            </section>
+
+            <!-- CONFIGURACIÓN INICIAL -->
+            <section id="configuracion-inicial" class="section">
+                <h2>⚙️ Configuración Inicial</h2>
+
+                <div class="alert alert-info">
+                    <strong>👤 Rol requerido:</strong> <span class="badge badge-danger">Administrador</span>
+                </div>
+
+                <h3>Configuración del Tenant</h3>
+                <p>El "tenant" representa su empresa u organización dentro del sistema multi-tenant.</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Tenant</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Configure los siguientes datos:
+                    <ul>
+                        <li><strong>Nombre de la Empresa:</strong> Nombre legal de su negocio</li>
+                        <li><strong>NIT/RUT:</strong> Identificación tributaria</li>
+                        <li><strong>Dirección:</strong> Dirección física del negocio</li>
+                        <li><strong>Teléfono y Email:</strong> Datos de contacto</li>
+                        <li><strong>Moneda:</strong> Moneda principal (COP, USD, etc.)</li>
+                        <li><strong>Logo:</strong> Logo de la empresa (aparecerá en facturas)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Haga clic en "Guardar"
+                </div>
+
+                <h3>Configuraciones Avanzadas</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Configuración</th>
+                            <th>Descripción</th>
+                            <th>Valores</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Método de Redondeo</strong></td>
+                            <td>Cómo se redondean los decimales</td>
+                            <td>Al centavo más cercano, Hacia arriba, Hacia abajo</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Precio Incluye IVA</strong></td>
+                            <td>Si los precios ya incluyen impuestos</td>
+                            <td>Sí / No</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Descuento Máximo</strong></td>
+                            <td>Límite de descuento por transacción</td>
+                            <td>0-100%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Stock Mínimo Global</strong></td>
+                            <td>Cantidad mínima predeterminada</td>
+                            <td>Número</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- CONFIGURACION POR TENANT -->
+            <section id="configuracion-tenant" class="section">
+                <h2>Configuración por Tenant</h2>
+
+                <p>Este módulo define cómo opera <strong>su empresa (tenant)</strong> en POSLite. Cada tenant tiene su propia configuración, aislada de los demás.</p>
+
+                <div class="alert alert-info">
+                    <strong>Rol requerido:</strong> Administrador o Gerente (según permisos asignados).
+                </div>
+
+                <h3>Ruta de acceso</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Tenant</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Actualice y guarde los parámetros operativos
+                </div>
+
+                <h3>Parámetros recomendados</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parámetro</th>
+                            <th>Qué controla</th>
+                            <th>Recomendación</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Tamaño de página por defecto</td>
+                            <td>Paginación server-side en listados</td>
+                            <td>10-25 según volumen</td>
+                        </tr>
+                        <tr>
+                            <td>Horas máximas de sesión de caja</td>
+                            <td>Tiempo permitido para una caja abierta</td>
+                            <td>8-12 horas por turno</td>
+                        </tr>
+                        <tr>
+                            <td>Tema de interfaz</td>
+                            <td>Modo visual de la aplicación</td>
+                            <td>Definir estándar para todo el equipo</td>
+                        </tr>
+                        <tr>
+                            <td>Políticas comerciales</td>
+                            <td>Descuento máximo, redondeo, impuestos</td>
+                            <td>Alinear con política interna y fiscal</td>
+                        </tr>
+                        <tr>
+                            <td>Facturación electrónica</td>
+                            <td>Activación FE y datos DIAN del tenant</td>
+                            <td>Completar antes de operar FE</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Buenas prácticas</h3>
+                <ul>
+                    <li>Documente quién modifica configuración crítica y cuándo.</li>
+                    <li>Pruebe en horario de baja operación cambios en parámetros sensibles (caja, impuestos, FE).</li>
+                    <li>Evite usar valores por defecto sin revisión de negocio.</li>
+                </ul>
+            </section>
+
+            <!-- USUARIOS Y ROLES -->
+            <section id="usuarios-roles" class="section">
+                <h2>👥 Usuarios y Roles</h2>
+
+                <h3>Gestión de Usuarios</h3>
+                <p>Los usuarios son las personas que tendrán acceso al sistema.</p>
+
+                <h4>Crear Nuevo Usuario</h4>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Seguridad → Usuarios</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en el botón <strong>"+ Nuevo Usuario"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete el formulario:
+                    <ul>
+                        <li><strong>Email:</strong> Correo electrónico (será el usuario)</li>
+                        <li><strong>Nombre Completo:</strong> Nombre del usuario</li>
+                        <li><strong>Contraseña:</strong> Contraseña inicial (el usuario debe cambiarla)</li>
+                        <li><strong>Rol:</strong> Seleccione el rol apropiado</li>
+                        <li><strong>Estado:</strong> Activo/Inactivo</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Haga clic en "Guardar"
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>🔒 Seguridad:</strong> Los usuarios recibirán un email de confirmación. Deben activar su cuenta antes del primer acceso.
+                </div>
+
+                <h3>Sistema de Roles</h3>
+                <p>Los roles definen los permisos y accesos de cada usuario.</p>
+
+                <h4>Roles Predefinidos</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rol</th>
+                            <th>Descripción</th>
+                            <th>Permisos Principales</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge badge-danger">Administrador</span></td>
+                            <td>Control total del sistema</td>
+                            <td>Todos los permisos, configuración, usuarios</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge badge-primary">Gerente</span></td>
+                            <td>Gestión operativa</td>
+                            <td>Ventas, compras, reportes, productos</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge badge-success">Cajero</span></td>
+                            <td>Operación de POS</td>
+                            <td>Solo punto de venta y consulta de productos</td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge badge-warning">Bodeguero</span></td>
+                            <td>Control de inventario</td>
+                            <td>Entrada/salida de productos, movimientos</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Crear Rol Personalizado</h4>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Seguridad → Roles</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Rol"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Defina:
+                    <ul>
+                        <li><strong>Nombre del Rol:</strong> Ej: "Vendedor Senior"</li>
+                        <li><strong>Descripción:</strong> Propósito del rol</li>
+                        <li><strong>Permisos:</strong> Marque las opciones necesarias</li>
+                    </ul>
+                </div>
+
+                <h3>Permisos Disponibles</h3>
+                <ul>
+                    <li>✅ Ver productos</li>
+                    <li>✅ Crear/editar productos</li>
+                    <li>✅ Eliminar productos</li>
+                    <li>✅ Realizar ventas</li>
+                    <li>✅ Aplicar descuentos</li>
+                    <li>✅ Anular ventas</li>
+                    <li>✅ Registrar compras</li>
+                    <li>✅ Gestionar inventario</li>
+                    <li>✅ Abrir/cerrar caja</li>
+                    <li>✅ Ver reportes</li>
+                    <li>✅ Configurar sistema</li>
+                    <li>✅ Gestionar usuarios</li>
+                </ul>
+            </section>
+
+            <!-- Administracion Avanzada -->
+            <section id="administracion-avanzada" class="section">
+                <h2>Administracion Avanzada</h2>
+                <h3>Setup Wizard (Onboarding Inicial)</h3>
+                <p>El asistente de configuraci?n gu?a la puesta en marcha del tenant en pocos pasos.</p>
+                <ul>
+                    <li>Datos b?sicos de la empresa</li>
+                    <li>Ubicaci?n principal y caja inicial</li>
+                    <li>Usuarios base y roles iniciales</li>
+                    <li>M?todos de pago recomendados</li>
+                </ul>
+                <h3>Gesti?n de Tenants (Super Admin)</h3>
+                <p>Disponible solo para usuarios Super Admin del sistema.</p>
+                <ul>
+                    <li>Crear y administrar tenants</li>
+                    <li>Activar o desactivar tenants</li>
+                    <li>Monitorear configuraci?n general por tenant</li>
+                </ul>
+                <h3>Roles, Permisos y Men?s (Super Admin)</h3>
+                <p>Permite administrar el cat?logo global de roles y men?s y su asignaci?n por plantillas.</p>
+                <ul>
+                    <li>Crear/editar roles globales</li>
+                    <li>Definir permisos por modulo</li>
+                    <li>Dise?ar estructura de men?s por rol</li>
+                </ul>
+                <div class="alert alert-warning">
+                    <strong>Importante:</strong> estos modulos impactan permisos de navegaci?n y acceso a datos. Realice cambios en horarios de bajo uso y con respaldo.
+                </div>
+            </section>            <!-- UBICACIONES -->
+            <section id="ubicaciones" class="section">
+                <h2>📍 Ubicaciones</h2>
+
+                <p>Las ubicaciones representan puntos físicos donde se almacena o vende inventario (tiendas, bodegas, sucursales).</p>
+
+                <h3>Crear Nueva Ubicación</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Ubicaciones</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Ubicación"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete:
+                    <ul>
+                        <li><strong>Nombre:</strong> Ej: "Tienda Centro", "Bodega Principal"</li>
+                        <li><strong>Código:</strong> Identificador único (Ej: TC01, BP01)</li>
+                        <li><strong>Tipo:</strong> Tienda, Bodega, Sucursal</li>
+                        <li><strong>Dirección:</strong> Dirección física</li>
+                        <li><strong>Activa:</strong> Estado operativo</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Debe tener al menos una ubicación activa para realizar operaciones. Se recomienda marcar una como "Principal".
+                </div>
+
+                <h3>Transferencias Entre Ubicaciones</h3>
+                <p>Si tiene múltiples ubicaciones, puede transferir inventario entre ellas:</p>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Inventario → Movimientos</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione tipo de movimiento: <strong>"Transferencia"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Indique ubicación origen, destino y productos a transferir
+                </div>
+            </section>
+
+            <!-- CAJAS REGISTRADORAS -->
+            <section id="cajas" class="section">
+                <h2>💻 Cajas Registradoras</h2>
+
+                <h3>Configuración de Cajas</h3>
+                <p>Las cajas registradoras son los puntos físicos donde se realizan las ventas.</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Cajas</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Caja"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure:
+                    <ul>
+                        <li><strong>Nombre:</strong> Ej: "Caja 1", "Caja Principal"</li>
+                        <li><strong>Código:</strong> Identificador único</li>
+                        <li><strong>Ubicación:</strong> Ubicación donde está la caja</li>
+                        <li><strong>Estado:</strong> Activo/Inactivo</li>
+                    </ul>
+                </div>
+
+                <h3>Asignación de Cajeros</h3>
+                <p>Asocie usuarios (cajeros) a cajas específicas:</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Asignación de Cajeros</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione la <strong>Caja</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Marque los <strong>usuarios</strong> que pueden usar esa caja
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>🔒 Seguridad:</strong> Un cajero solo puede ver ventas y sesiones de las cajas a las que está asignado.
+                </div>
+            </section>
+
+            <!-- CATEGORÍAS -->
+            <section id="categorias" class="section">
+                <h2>📂 Categorías de Productos</h2>
+
+                <p>Las categorías ayudan a organizar sus productos y aplicar reglas comunes (impuestos, descuentos).</p>
+
+                <h3>Crear Categoría</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Catálogos → Categorías</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Categoría"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete:
+                    <ul>
+                        <li><strong>Nombre:</strong> Ej: "Alimentos", "Electrónica", "Ropa"</li>
+                        <li><strong>Código:</strong> Identificador corto (opcional)</li>
+                        <li><strong>Descripción:</strong> Notas adicionales</li>
+                        <li><strong>Categoría Padre:</strong> Para crear subcategorías</li>
+                    </ul>
+                </div>
+
+                <h3>Jerarquía de Categorías</h3>
+                <p>Puede crear categorías anidadas, por ejemplo:</p>
+                <ul>
+                    <li>Ropa
+                        <ul>
+                            <li>Ropa de Hombre
+                                <ul>
+                                    <li>Camisas</li>
+                                    <li>Pantalones</li>
+                                </ul>
+                            </li>
+                            <li>Ropa de Mujer
+                                <ul>
+                                    <li>Blusas</li>
+                                    <li>Vestidos</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Use categorías para aplicar reglas de impuestos automáticas. Ej: Todos los "Alimentos" con 0% IVA.
+                </div>
+            </section>
+
+            <!-- UNIDADES DE MEDIDA -->
+            <section id="unidades" class="section">
+                <h2>📏 Unidades de Medida</h2>
+
+                <p>Defina las unidades en las que vende y compra sus productos.</p>
+
+                <h3>Unidades Comunes</h3>
+                <p>El sistema incluye unidades predefinidas:</p>
+                <ul>
+                    <li><strong>Unidad (UND):</strong> Para productos individuales</li>
+                    <li><strong>Metro (MT):</strong> Para telas, cables</li>
+                    <li><strong>Kilogramo (KG):</strong> Para productos por peso</li>
+                    <li><strong>Litro (LT):</strong> Para líquidos</li>
+                    <li><strong>Caja:</strong> Para empaques</li>
+                </ul>
+
+                <h3>Crear Unidad Personalizada</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Catálogos → Unidades de Medida</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Unidad"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Defina:
+                    <ul>
+                        <li><strong>Código:</strong> Abreviatura (Ej: PAQ)</li>
+                        <li><strong>Nombre:</strong> Nombre completo (Ej: Paquete)</li>
+                        <li><strong>Código DIAN:</strong> Para facturación electrónica</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Importante:</strong> No elimine unidades que estén en uso por productos existentes.
+                </div>
+            </section>
+
+            <!-- IMPUESTOS -->
+            <section id="impuestos" class="section">
+                <h2>💰 Impuestos y Reglas Tributarias</h2>
+
+                <h3>Crear Impuesto</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Impuestos</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Impuesto"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure:
+                    <ul>
+                        <li><strong>Nombre:</strong> Ej: "IVA 19%"</li>
+                        <li><strong>Porcentaje:</strong> 19.00</li>
+                        <li><strong>Tipo:</strong> IVA, INC, Otro</li>
+                        <li><strong>Descripción:</strong> Notas</li>
+                    </ul>
+                </div>
+
+                <h3>Reglas de Impuestos</h3>
+                <p>Defina qué impuestos aplican automáticamente según:</p>
+                <ul>
+                    <li>Categoría de producto</li>
+                    <li>Producto específico</li>
+                    <li>Ubicación de venta</li>
+                </ul>
+
+                <h4>Crear Regla de Impuesto</h4>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Reglas de Impuestos</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Regla"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Defina:
+                    <ul>
+                        <li><strong>Nombre:</strong> Descriptivo</li>
+                        <li><strong>Prioridad:</strong> Orden de aplicación (1-100)</li>
+                        <li><strong>Condiciones:</strong>
+                            <ul>
+                                <li>Categoría: Ej: "Alimentos"</li>
+                                <li>Ubicación: Ej: "Zona Franca"</li>
+                            </ul>
+                        </li>
+                        <li><strong>Impuesto a Aplicar:</strong> Seleccione el impuesto</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>✅ Ejemplo:</strong> Regla "Alimentos Sin IVA" - Categoría: Alimentos → Impuesto: 0%
+                </div>
+            </section>
+
+            <!-- MÉTODOS DE PAGO -->
+            <section id="metodos-pago" class="section">
+                <h2>💳 Métodos de Pago</h2>
+
+                <p>Configure los métodos de pago que acepta su negocio.</p>
+
+                <h3>Métodos Predefinidos</h3>
+                <ul>
+                    <li>Efectivo</li>
+                    <li>Tarjeta de Crédito</li>
+                    <li>Tarjeta de Débito</li>
+                    <li>Transferencia Bancaria</li>
+                </ul>
+
+                <h3>Crear Método Personalizado</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Métodos de Pago</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Método"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure:
+                    <ul>
+                        <li><strong>Nombre:</strong> Ej: "Cheque", "Crédito a 30 días"</li>
+                        <li><strong>Tipo:</strong> Efectivo / Crédito / Débito</li>
+                        <li><strong>Requiere Referencia:</strong> Para vouchers</li>
+                        <li><strong>Activo:</strong> Habilitado en POS</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Los métodos marcados como "Activos" aparecerán en el punto de venta.
+                </div>
+            </section>
+
+            <!-- PRODUCTOS -->
+            <section id="productos" class="section">
+                <h2>📦 Gestión de Productos</h2>
+
+                <h3>Tipos de Productos</h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4>🔹 Producto Simple</h4>
+                        <p>Producto individual sin variantes (Ej: Coca Cola 2L)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🔢 Producto con Variantes</h4>
+                        <p>Producto con múltiples opciones (Ej: Camisa - Tallas S,M,L)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📦 Kit/Combo</h4>
+                        <p>Conjunto de productos vendidos juntos</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>⚙️ Servicio</h4>
+                        <p>Sin inventario físico (Ej: Instalación)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🏭 Manufacturado (TO_STOCK)</h4>
+                        <p>Se produce y almacena en inventario</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎯 Manufacturado (ON_DEMAND)</h4>
+                        <p>Se produce al momento de la venta</p>
+                    </div>
+                </div>
+
+                <h3>Crear Producto Simple</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Productos → Productos</strong> (pestaña Productos)
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Producto"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete el formulario:
+                    
+                    <h4>Información General</h4>
+                    <ul>
+                        <li><strong>Nombre:</strong> Nombre del producto</li>
+                        <li><strong>Categoría:</strong> Seleccione de la lista</li>
+                        <li><strong>Código de Barras:</strong> EAN/UPC (opcional)</li>
+                        <li><strong>Descripción:</strong> Detalles del producto</li>
+                    </ul>
+
+                    <h4>Comportamiento de Inventario</h4>
+                    <ul>
+                        <li><strong>STANDARD:</strong> Control de inventario normal</li>
+                        <li><strong>SERVICE:</strong> Sin inventario</li>
+                        <li><strong>KIT:</strong> Conjunto de productos</li>
+                        <li><strong>MANUFACTURED (TO_STOCK):</strong> Se produce para inventario</li>
+                        <li><strong>MANUFACTURED (ON_DEMAND):</strong> Se produce al vender</li>
+                    </ul>
+
+                    <h4>Precios y Costos</h4>
+                    <ul>
+                        <li><strong>SKU:</strong> Código interno (autogenerado si se deja vacío)</li>
+                        <li><strong>Costo:</strong> Precio de compra/producción</li>
+                        <li><strong>Precio de Venta:</strong> Precio al público</li>
+                        <li><strong>Unidad:</strong> Unidad de medida</li>
+                    </ul>
+
+                    <h4>Tracking</h4>
+                    <ul>
+                        <li><strong>Rastrear Lotes:</strong> ☑ Para control por lotes</li>
+                        <li><strong>Rastrear Vencimiento:</strong> ☑ Para productos perecederos</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Haga clic en "Guardar"
+                </div>
+
+                <h3>Crear Producto con Variantes</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Siga los pasos 1-3 anteriores
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    En la sección <strong>"Variantes"</strong>, marque ☑ <strong>"Este producto tiene variantes"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure las variantes:
+                    <ul>
+                        <li><strong>Opción 1:</strong> Ej: "Talla" → Valores: S, M, L, XL</li>
+                        <li><strong>Opción 2:</strong> Ej: "Color" → Valores: Rojo, Azul, Verde</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    El sistema generará automáticamente todas las combinaciones
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Para cada variante, defina:
+                    <ul>
+                        <li>SKU específico</li>
+                        <li>Costo</li>
+                        <li>Precio</li>
+                        <li>Código de barras (opcional)</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>✅ Ejemplo:</strong> Camisa Polo → Tallas (S,M,L) × Colores (Rojo, Azul) = 6 variantes
+                </div>
+
+                <h3>Marcar Producto como Componente</h3>
+                <p>Los componentes son productos que se usan en manufactura (materia prima, insumos).</p>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Al crear/editar el producto, marque ☑ <strong>"Es Componente"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Los componentes aparecerán en la pestaña <strong>"Insumos/Componentes"</strong>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Sugerencia:</strong> Use la pestaña "Insumos/Componentes" para gestionar solo sus materias primas, separadas de los productos finales.
+                </div>
+
+                <h3>🧾 Campos de Facturación Electrónica en Variantes</h3>
+                <p>Cada variante de producto tiene una sección opcional <strong>"Facturación Electrónica (DIAN)"</strong> en su formulario:</p>
+                <table>
+                    <thead>
+                        <tr><th>Campo</th><th>Descripción</th><th>Ejemplo</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Unidad DIAN</strong></td>
+                            <td>Unidad de medida reconocida por la DIAN para el XML FE. Autocomplete de la tabla de unidades del sistema.</td>
+                            <td>UND — Unidad</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Código Estándar</strong></td>
+                            <td>Código universal del producto/servicio para el XML. Normalmente un código UNSPSC de 8 dígitos.</td>
+                            <td><code>43211500</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Tipo de Código</strong></td>
+                            <td>Estándar al que pertenece el código.</td>
+                            <td>UNSPSC / EAN / GTIN / PARTNUM</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Si su empresa maneja muchos productos, puede cargar masivamente estos campos usando la plantilla Excel (columnas <code>standard_code</code> y <code>standard_code_type</code>).
+                </div>
+            </section>
+
+            <!-- INVENTARIO -->
+            <section id="inventario" class="section">
+                <h2>📊 Control de Inventario</h2>
+
+                <h3>Vista de Inventario</h3>
+                <p>Consulte el stock disponible de todos sus productos por ubicación.</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Inventario → Inventario</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione la <strong>Ubicación</strong> (si tiene múltiples)
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Vea el stock actual de cada producto:
+                    <ul>
+                        <li><strong>En Mano:</strong> Stock físico disponible</li>
+                        <li><strong>Disponible:</strong> Stock - Reservas</li>
+                        <li><strong>Valor:</strong> Costo total del inventario</li>
+                    </ul>
+                </div>
+
+                <h3>Ajustes de Inventario</h3>
+                <p>Realice correcciones manuales del stock (conteos físicos, mermas, daños).</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    En la vista de inventario, haga clic en el botón de <strong>"Ajuste"</strong> del producto
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione el tipo de ajuste:
+                    <ul>
+                        <li><strong>Ajuste Positivo:</strong> Agregar stock</li>
+                        <li><strong>Ajuste Negativo:</strong> Reducir stock (merma, daño)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese:
+                    <ul>
+                        <li>Cantidad a ajustar</li>
+                        <li>Motivo/Razón</li>
+                        <li>Lote (si aplica)</li>
+                    </ul>
+                </div>
+
+                <h3>Alertas de Stock Mínimo</h3>
+                <p>Configure alertas automáticas cuando un producto esté bajo en stock.</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Al crear/editar un producto, defina el <strong>"Stock Mínimo"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    El sistema mostrará una alerta 🔴 cuando el stock esté por debajo de este valor
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Vea todas las alertas en <strong>Dashboard → Alertas de Stock</strong>
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Importante:</strong> Los ajustes de inventario son permanentes. Use con precaución.
+                </div>
+            </section>
+
+            <!-- LOTES -->
+            <section id="lotes" class="section">
+                <h2>🏷️ Gestión de Lotes</h2>
+
+                <p>El sistema de lotes permite rastrear productos por:</p>
+                <ul>
+                    <li><strong>Número de Lote:</strong> Identificación única</li>
+                    <li><strong>Fecha de Recepción:</strong> Cuándo ingresó</li>
+                    <li><strong>Fecha de Vencimiento:</strong> Para productos perecederos</li>
+                    <li><strong>Costo Unitario:</strong> Costo específico de ese lote</li>
+                </ul>
+
+                <h3>FEFO (First Expired, First Out)</h3>
+                <p>El sistema consume automáticamente los lotes según su fecha de vencimiento:</p>
+                <ol>
+                    <li>Al vender o consumir en producción, se selecciona el lote que vence primero</li>
+                    <li>Si hay productos sin vencimiento, se usa FIFO (primero en entrar, primero en salir)</li>
+                    <li>Garantiza que no se vendan productos vencidos</li>
+                </ol>
+
+                <h3>Consultar Lotes</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Inventario → Gestión de Lotes</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Filtre por:
+                    <ul>
+                        <li>Producto</li>
+                        <li>Ubicación</li>
+                        <li>Fecha de vencimiento</li>
+                        <li>Estado (Activo/Agotado)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Vea detalles de cada lote:
+                    <ul>
+                        <li>Stock disponible</li>
+                        <li>Ubicación física</li>
+                        <li>Días hasta vencimiento</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-danger">
+                    <strong>🔴 Alerta de Vencimiento:</strong> Los lotes próximos a vencer (≤ 7 días) se marcan en rojo.
+                </div>
+            </section>
+
+            <!-- PRECIOS -->
+            <section id="precios" class="section">
+                <h2>💵 Reglas de Precios</h2>
+
+                <p>Configure reglas automáticas para calcular precios de venta basados en el costo.</p>
+
+                <h3>Crear Regla de Precio</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Reglas de Precios</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Regla"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure:
+                    <ul>
+                        <li><strong>Nombre:</strong> Descriptivo</li>
+                        <li><strong>Aplicar a:</strong> Producto, Categoría, Global</li>
+                        <li><strong>Tipo de Cálculo:</strong>
+                            <ul>
+                                <li>Porcentaje de Markup: Precio = Costo × (1 + %)</li>
+                                <li>Monto Fijo: Precio = Costo + Monto</li>
+                            </ul>
+                        </li>
+                        <li><strong>Valor:</strong> % o Monto</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>✅ Ejemplo:</strong> Regla "Markup 30%" aplicada a categoría "Alimentos" → Todos los alimentos se venderán con 30% de ganancia sobre el costo.
+                </div>
+
+                <h3>Precios por Ubicación</h3>
+                <p>Puede definir precios diferentes para cada ubicación:</p>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Edite el producto
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    En <strong>"Precios por Ubicación"</strong>, defina precios específicos
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    El POS usará automáticamente el precio de la ubicación activa
+                </div>
+            </section>
+
+            <!-- BOM -->
+            <section id="boms" class="section">
+                <h2>📋 Listas de Materiales (BOM)</h2>
+
+                <p>Las BOM definen qué componentes y cantidades se necesitan para fabricar un producto.</p>
+
+                <h3>Crear BOM</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Manufactura → Listas de Materiales</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva BOM"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete:
+                    <ul>
+                        <li><strong>Código BOM:</strong> Identificador único</li>
+                        <li><strong>Producto Final:</strong> Qué se produce</li>
+                        <li><strong>Versión:</strong> Para control de cambios</li>
+                        <li><strong>Descripción:</strong> Notas</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Agregue componentes:
+                    <ul>
+                        <li><strong>Componente:</strong> Seleccione de productos marcados como "componente"</li>
+                        <li><strong>Cantidad Requerida:</strong> Por unidad producida</li>
+                        <li><strong>Unidad:</strong> Metro, Kg, Unidad, etc.</li>
+                        <li><strong>% Desperdicio:</strong> Pérdida esperada en producción</li>
+                        <li><strong>Es Opcional:</strong> ☐ Si no es crítico</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Haga clic en "Guardar"
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Desperdicio:</strong> Si define 10% de desperdicio en 1 metro de tela, el sistema consumirá 1.1 metros reales.
+                </div>
+
+                <h3>Cálculo Automático de Costos</h3>
+                <p>El sistema calcula automáticamente:</p>
+                <ul>
+                    <li><strong>Costo de Componentes:</strong> Suma de (Cantidad × Costo Unitario) de cada componente</li>
+                    <li><strong>Desperdicio:</strong> Incluye el % de pérdida</li>
+                    <li><strong>Costo Total:</strong> Costo base del producto manufacturado</li>
+                </ul>
+
+                <h3>Ejemplo de BOM</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Componente</th>
+                            <th>Cantidad</th>
+                            <th>Unidad</th>
+                            <th>Costo Unit.</th>
+                            <th>Desperdicio</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Tela Drill Verde</td>
+                            <td>1.6</td>
+                            <td>Metro</td>
+                            <td>$2,000</td>
+                            <td>5%</td>
+                            <td>$3,360</td>
+                        </tr>
+                        <tr>
+                            <td>Hilo Verde</td>
+                            <td>3</td>
+                            <td>Unidad</td>
+                            <td>$600</td>
+                            <td>0%</td>
+                            <td>$1,800</td>
+                        </tr>
+                        <tr>
+                            <td>Botones</td>
+                            <td>1</td>
+                            <td>Unidad</td>
+                            <td>$100</td>
+                            <td>0%</td>
+                            <td>$100</td>
+                        </tr>
+                        <tr>
+                            <td>Cierre Verde</td>
+                            <td>1</td>
+                            <td>Unidad</td>
+                            <td>$650</td>
+                            <td>0%</td>
+                            <td>$650</td>
+                        </tr>
+                        <tr>
+                            <td>Mano de Obra</td>
+                            <td>3</td>
+                            <td>Hora</td>
+                            <td>$2,350</td>
+                            <td>0%</td>
+                            <td>$7,050</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th colspan="5">COSTO TOTAL</th>
+                            <th>$12,960</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </section>
+
+            <!-- PRODUCCIÓN -->
+            <section id="produccion" class="section">
+                <h2>🏭 Órdenes de Producción</h2>
+
+                <h3>Flujo de Producción</h3>
+                <div class="workflow">
+                    <div class="workflow-step">PLANEAR</div>
+                    <div class="workflow-arrow">➜</div>
+                    <div class="workflow-step">INICIAR</div>
+                    <div class="workflow-arrow">➜</div>
+                    <div class="workflow-step">COMPLETAR</div>
+                    <div class="workflow-arrow">➜</div>
+                    <div class="workflow-step">INVENTARIO</div>
+                </div>
+
+                <h3>Crear Orden de Producción</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Manufactura → Órdenes de Producción</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Orden"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure:
+                    <ul>
+                        <li><strong>BOM:</strong> Seleccione la lista de materiales</li>
+                        <li><strong>Cantidad a Producir:</strong> Unidades</li>
+                        <li><strong>Ubicación:</strong> Donde se producirá y almacenará</li>
+                        <li><strong>Fecha Programada:</strong> Cuándo se planea producir</li>
+                        <li><strong>Notas:</strong> Instrucciones especiales</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    El sistema validará automáticamente:
+                    <ul>
+                        <li>✅ Disponibilidad de componentes</li>
+                        <li>✅ Stock suficiente</li>
+                        <li>⚠️ Componentes faltantes (si hay)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Haga clic en "Crear Orden"
+                </div>
+
+                <h3>Iniciar Producción</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    En la lista de órdenes, haga clic en el botón <strong>"Iniciar"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    El sistema cambia el estado a <span class="badge badge-warning">EN PROGRESO</span>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Se registra quién inició y cuándo
+                </div>
+
+                <h3>Completar Producción</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Cuando finalice la producción, haga clic en <strong>"Completar"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Confirme o ajuste:
+                    <ul>
+                        <li><strong>Cantidad Producida:</strong> Real (puede ser menor a la planeada)</li>
+                        <li><strong>Fecha de Vencimiento:</strong> (si el producto es perecedero)</li>
+                        <li><strong>Ubicación Física:</strong> Estante, pasillo (opcional)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    El sistema automáticamente:
+                    <ul>
+                        <li>✅ Consume componentes del inventario (FEFO)</li>
+                        <li>✅ Calcula el costo real de producción</li>
+                        <li>✅ Crea un lote nuevo con el producto terminado</li>
+                        <li>✅ Actualiza el costo y precio del producto</li>
+                        <li>✅ Registra trazabilidad completa</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>✅ Trazabilidad:</strong> Puede ver exactamente qué lotes de componentes se usaron en cada producción.
+                </div>
+
+                <h3>Consultar Detalle de Orden</h3>
+                <p>Haga clic en una orden para ver:</p>
+                <ul>
+                    <li>Producto y cantidad</li>
+                    <li>Estado y fechas</li>
+                    <li>Costo estimado vs real</li>
+                    <li><strong>Componentes consumidos:</strong> Tabla detallada con:
+                        <ul>
+                            <li>Componente</li>
+                            <li>Cantidad planeada</li>
+                            <li>Cantidad consumida (con desperdicio)</li>
+                            <li>Costo unitario</li>
+                            <li>Total por componente</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Importante:</strong> Una vez completada, la orden NO puede revertirse. Los componentes ya fueron consumidos del inventario.
+                </div>
+            </section>
+
+            <!-- COMPRAS -->
+            <section id="compras" class="section">
+                <h2>🛒 Registro de Compras</h2>
+
+                <p>Registre las compras de productos para incrementar su inventario.</p>
+
+                <h3>Crear Orden de Compra</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Compras → Órdenes de Compra</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nueva Compra"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete:
+                    <ul>
+                        <li><strong>Proveedor:</strong> Seleccione o cree nuevo</li>
+                        <li><strong>Número de Factura:</strong> Del proveedor</li>
+                        <li><strong>Fecha de Compra:</strong></li>
+                        <li><strong>Ubicación de Ingreso:</strong> Bodega/Tienda</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Agregue productos:
+                    <ul>
+                        <li><strong>Producto/Variante:</strong> Qué compró</li>
+                        <li><strong>Cantidad:</strong></li>
+                        <li><strong>Costo Unitario:</strong> Precio de compra</li>
+                        <li><strong>Número de Lote:</strong> (si aplica)</li>
+                        <li><strong>Fecha de Vencimiento:</strong> (si aplica)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Haga clic en "Registrar Compra"
+                </div>
+
+                <h3>Efecto en Inventario</h3>
+                <p>Al registrar la compra, el sistema:</p>
+                <ul>
+                    <li>✅ Incrementa el stock en la ubicación seleccionada</li>
+                    <li>✅ Crea un nuevo lote (si el producto rastrea lotes)</li>
+                    <li>✅ Actualiza el costo promedio del producto</li>
+                    <li>✅ Registra el movimiento en el historial</li>
+                </ul>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Registre las compras tan pronto reciba la mercancía para mantener el inventario actualizado.
+                </div>                <h3>Ordenes de Compra (Borrador)</h3>
+                <p>Puede guardar compras como orden para recibir luego.</p>
+                <ul>
+                    <li>Estados: <strong>DRAFT</strong>, <strong>PARTIAL</strong>, <strong>RECEIVED</strong>, <strong>CANCELLED</strong></li>
+                    <li>Boton: <strong>Guardar como OC</strong></li>
+                    <li>Bandeja: <strong>OC Pendientes</strong></li>
+                </ul>
+                <h3>Recepcion Parcial</h3>
+                <p>Al recibir mercancia, puede confirmar cantidades por linea sin exceder lo ordenado.</p>
+                <ul>
+                    <li>Si recibe parte de la OC, queda en estado <strong>PARTIAL</strong></li>
+                    <li>Cuando recibe el saldo completo, pasa a <strong>RECEIVED</strong></li>
+                    <li>Cada recepcion impacta inventario en la sede seleccionada</li>
+                </ul>
+                <h3>Devolucion a Proveedor</h3>
+                <p>Desde el detalle de compra puede devolver lineas parciales o totales al proveedor.</p>
+                <ul>
+                    <li>No permite devolver mas de lo comprado por linea</li>
+                    <li>No permite devolver si no hay stock disponible</li>
+                    <li>Registra movimiento de inventario de salida por devolucion</li>
+                </ul>
+                <h3>Cuentas por Pagar (CxP Proveedores)</h3>
+                <p>Puede crear una cuenta por pagar asociada a la compra y registrar abonos.</p>
+                <ul>
+                    <li>Estados: <strong>OPEN</strong>, <strong>PARTIAL</strong>, <strong>PAID</strong>, <strong>CANCELLED</strong></li>
+                    <li>Bandeja global por vencer y vencidas</li>
+                    <li>Pago masivo para multiples cuentas seleccionadas</li>
+                </ul>
+                <h3>Mercancia en Transito</h3>
+                <p>Los traslados entre sedes se manejan con solicitudes en transito.</p>
+                <ul>
+                    <li>Crear traslado: salida en sede origen (<strong>IN_TRANSIT</strong>)</li>
+                    <li>Recibir traslado: entrada en sede destino (<strong>RECEIVED</strong>)</li>
+                    <li>Control por rol/sede segun asignacion de caja</li>
+                </ul>
+            </section>
+
+            <!-- CLIENTES -->
+            <!-- TERCEROS -->
+            <section id="terceros" class="section">
+                <h2>🏢 Terceros (Clientes y Proveedores)</h2>
+
+                <p>El módulo de Terceros centraliza toda la información de clientes, proveedores, empleados y terceros en general, incluyendo los datos fiscales necesarios para la Facturación Electrónica DIAN.</p>
+
+                <div class="alert alert-info">
+                    <strong>👤 Rol requerido:</strong> <span class="badge badge-primary">Gerente</span> o <span class="badge badge-danger">Administrador</span>
+                </div>
+
+                <h3>Tipos de Terceros</h3>
+                <table>
+                    <thead>
+                        <tr><th>Tipo</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>customer</strong></td><td>Solo cliente (aparece en POS y en Receptor Fiscal FE)</td></tr>
+                        <tr><td><strong>supplier</strong></td><td>Solo proveedor (aparece en módulo de Compras)</td></tr>
+                        <tr><td><strong>both</strong></td><td>Cliente y proveedor a la vez</td></tr>
+                        <tr><td><strong>employee</strong></td><td>Empleado</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Crear Nuevo Tercero</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Catálogos → Terceros</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Tercero"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete la información básica:
+                    <ul>
+                        <li><strong>Razón Social / Nombre:</strong> Nombre legal completo (requerido)</li>
+                        <li><strong>Nombre Comercial:</strong> Alias o marca</li>
+                        <li><strong>Tipo:</strong> customer / supplier / both / employee</li>
+                        <li><strong>Tipo de Documento:</strong> NIT, CC, CE, TI, PPN</li>
+                        <li><strong>Número de Documento:</strong> Sin dígito de verificación si es NIT</li>
+                        <li><strong>DV:</strong> Dígito de verificación (solo NIT)</li>
+                        <li><strong>Teléfono / Email</strong></li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Complete la información fiscal (requerida para Facturación Electrónica):
+                    <ul>
+                        <li><strong>Email Fiscal:</strong> Correo para recibir facturas electrónicas</li>
+                        <li><strong>Dirección:</strong> Dirección física completa</li>
+                        <li><strong>Ciudad:</strong> Ciudad de ubicación</li>
+                        <li><strong>Código DANE Municipio:</strong> Código de 5 dígitos del municipio según el DANE (Ej: <code>11001</code> = Bogotá D.C.). <em>Requerido en el XML FE.</em></li>
+                        <li><strong>Departamento:</strong> Departamento</li>
+                        <li><strong>Código País:</strong> ISO 3166-1 alpha-2 (default: <code>CO</code>)</li>
+                        <li><strong>Régimen Tributario:</strong> SIMPLE, ORDINARIO, NO_RESP, GRAN_CONTRIB</li>
+                        <li><strong>Responsable de IVA:</strong> Sí/No</li>
+                        <li><strong>Obliado a Llevar Contabilidad:</strong> Sí/No</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Haga clic en <strong>"Guardar"</strong>
+                </div>
+
+                <h3>Cliente Genérico (Consumidor Final)</h3>
+                <p>Para ventas rápidas sin identificación del comprador, el sistema permite usar automáticamente el <strong>Consumidor Final</strong>. No se requiere crear un tercero para este caso.</p>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Para Facturación Electrónica:</strong> Cuando la FE está activa, las ventas a consumidor final se emiten como <em>Factura de Venta (FV)</em> sin receptor específico. Para emitir una FE con datos del comprador, debe seleccionar el <strong>Receptor Fiscal</strong> en el POS.
+                </div>
+
+                <h3>Consultar y Editar Terceros</h3>
+                <ul>
+                    <li>Use el buscador para filtrar por nombre o número de documento</li>
+                    <li>Haga clic en el ícono de edición para modificar datos</li>
+                    <li>Puede desactivar un tercero sin eliminarlo</li>
+                </ul>
+            </section>
+
+            <!-- CARGA MASIVA -->
+            <section id="carga-masiva" class="section">
+                <h2>📥 Carga Masiva por Excel</h2>
+
+                <p>El módulo de carga masiva permite importar grandes cantidades de <strong>Productos</strong> o <strong>Terceros</strong> desde un archivo Excel (XLSX), ideal para el arranque inicial del sistema o migraciones.</p>
+
+                <div class="alert alert-info">
+                    <strong>👤 Rol requerido:</strong> <span class="badge badge-danger">Administrador</span>
+                </div>
+
+                <h3>Acceder al Módulo</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Administración → Carga Masiva</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione el <strong>Tipo de Importación</strong>: Productos/variantes o Terceros
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Haga clic en <strong>"Descargar Plantilla"</strong> para obtener el XLSX correcto
+                </div>
+
+                <h3>Plantilla de Productos (<code>import-product-variants.xlsx</code>)</h3>
+                <p>Rellene la hoja <strong>productos</strong> con una fila por producto:</p>
+                <table>
+                    <thead>
+                        <tr><th>Columna</th><th>Requerida</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>product_name</code></td><td>✅ Sí</td><td>Nombre del producto. Si ya existe se actualiza.</td></tr>
+                        <tr><td><code>unit_price</code></td><td>✅ Sí</td><td>Precio de venta de la variante.</td></tr>
+                        <tr><td><code>category_name</code></td><td>No</td><td>Se crea automáticamente si no existe.</td></tr>
+                        <tr><td><code>unit_code</code></td><td>No</td><td>Código DIAN de unidad de medida (ver hoja <em>unidades_dian</em>).</td></tr>
+                        <tr><td><code>unit_cost</code></td><td>No</td><td>Costo unitario.</td></tr>
+                        <tr><td><code>tax_code</code></td><td>No</td><td>IVA19, IVA5 o IVA0.</td></tr>
+                        <tr><td><code>price_includes_tax</code></td><td>No</td><td>TRUE si el precio ya incluye IVA.</td></tr>
+                        <tr><td><code>inventory_type</code></td><td>No</td><td>REVENTA / SERVICIO / MANUFACTURA / BUNDLE (default REVENTA).</td></tr>
+                        <tr><td><code>initial_stock</code></td><td>No</td><td>Cantidad inicial en la ubicación indicada.</td></tr>
+                        <tr><td><code>location_code</code></td><td>No</td><td>Código de la bodega para el stock inicial.</td></tr>
+                        <tr><td><code>control_expiration</code></td><td>No</td><td>TRUE para activar gestión de lotes y vencimientos.</td></tr>
+                        <tr><td><code>is_component</code></td><td>No</td><td>TRUE si es insumo/materia prima.</td></tr>
+                        <tr><td><code>is_active</code></td><td>No</td><td>TRUE/FALSE (default TRUE).</td></tr>
+                        <tr><td><code>standard_code</code></td><td>No</td><td>🧾 Código estándar del producto para el XML FE (Ej: código UNSPSC del ítem).</td></tr>
+                        <tr><td><code>standard_code_type</code></td><td>No</td><td>🧾 Tipo de código: <strong>UNSPSC</strong> (default), EAN, GTIN o PARTNUM. Usa el desplegable.</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Plantilla de Terceros (<code>import-third-parties.xlsx</code>)</h3>
+                <p>Rellene la hoja <strong>terceros</strong> con una fila por tercero:</p>
+                <table>
+                    <thead>
+                        <tr><th>Columna</th><th>Requerida</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>legal_name</code></td><td>✅ Sí</td><td>Razón social o nombre completo.</td></tr>
+                        <tr><td><code>document_type</code></td><td>No</td><td>NIT, CC, CE, TI, PPN. Usa el desplegable.</td></tr>
+                        <tr><td><code>document_number</code></td><td>No</td><td>Número sin DV para NIT. Si ya existe se actualiza.</td></tr>
+                        <tr><td><code>dv</code></td><td>No</td><td>Dígito de verificación (solo NIT).</td></tr>
+                        <tr><td><code>type</code></td><td>No</td><td>customer / supplier / both / employee.</td></tr>
+                        <tr><td><code>trade_name</code></td><td>No</td><td>Nombre comercial.</td></tr>
+                        <tr><td><code>email</code> / <code>phone</code></td><td>No</td><td>Datos de contacto.</td></tr>
+                        <tr><td><code>fiscal_email</code></td><td>No</td><td>Correo para envío de FE.</td></tr>
+                        <tr><td><code>address</code></td><td>No</td><td>Dirección completa.</td></tr>
+                        <tr><td><code>city</code></td><td>No</td><td>Ciudad.</td></tr>
+                        <tr><td><code>city_code</code></td><td>No</td><td>🧾 Código DANE del municipio (5 dígitos, Ej: <strong>11001</strong> = Bogotá D.C.). Requerido en XML FE.</td></tr>
+                        <tr><td><code>department</code></td><td>No</td><td>Departamento.</td></tr>
+                        <tr><td><code>country_code</code></td><td>No</td><td>Código país ISO (default CO).</td></tr>
+                        <tr><td><code>tax_regime</code></td><td>No</td><td>SIMPLE / ORDINARIO / NO_RESP / GRAN_CONTRIB.</td></tr>
+                        <tr><td><code>is_responsible_for_iva</code></td><td>No</td><td>TRUE/FALSE.</td></tr>
+                        <tr><td><code>default_currency</code></td><td>No</td><td>COP, USD, EUR (default COP).</td></tr>
+                        <tr><td><code>is_active</code></td><td>No</td><td>TRUE/FALSE (default TRUE).</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Proceso de Importación</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Descargue la plantilla, complete los datos y guarde el archivo.
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    En el módulo de Carga Masiva, haga clic en <strong>"Elegir archivo XLSX"</strong>.
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Haga clic en <strong>"Subir y Procesar"</strong>. El sistema procesa fila por fila.
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Al finalizar, vea el resumen: filas procesadas y errores. Si hay errores, haga clic en el ícono de alerta para ver el detalle por fila.
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Notas importantes:</strong>
+                    <ul>
+                        <li>No modifique los nombres de las columnas (fila 1).</li>
+                        <li>Los booleanos deben ser <code>TRUE</code> o <code>FALSE</code> en mayúsculas.</li>
+                        <li>Si un producto (por nombre) o tercero (por número de documento) ya existe, se <strong>actualiza</strong>; no se duplica.</li>
+                        <li>El historial de importaciones queda guardado con fecha, estado y conteo de errores.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- PUNTO DE VENTA -->
+            <section id="pos" class="section">
+                <h2>💵 Punto de Venta (POS)</h2>
+
+                <h3>Iniciar Sesión de Caja</h3>
+                <p>Antes de realizar ventas, debe abrir una sesión de caja:</p>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Operaciones → Punto de Venta</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Si no hay sesión activa, el sistema le pedirá abrir una
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese el <strong>Monto Inicial</strong> de efectivo en la caja
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Haga clic en "Abrir Sesión"
+                </div>
+
+                <h3>Realizar una Venta</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Seleccione el <strong>Cliente</strong> (o use el genérico)
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Agregue productos usando:
+                    <ul>
+                        <li><strong>Buscador:</strong> Escriba nombre o SKU</li>
+                        <li><strong>Lector de Código de Barras:</strong> Escanee</li>
+                        <li><strong>Categorías:</strong> Navegue por categorías</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Para cada producto:
+                    <ul>
+                        <li>Ajuste la <strong>Cantidad</strong> si es necesario</li>
+                        <li>Aplique <strong>Descuento</strong> (individual o global):
+                            <ul>
+                                <li>Porcentaje: Ej: 10%</li>
+                                <li>Monto Fijo: Ej: $5,000</li>
+                                <li>Ambos: Se aplican secuencialmente</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Verifique el resumen:
+                    <ul>
+                        <li>Subtotal</li>
+                        <li>Descuentos</li>
+                        <li>Impuestos (calculados automáticamente)</li>
+                        <li><strong>Total a Pagar</strong></li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Haga clic en <strong>"Procesar Pago"</strong>
+                </div>
+
+                <h3>Receptor Fiscal (Facturación Electrónica)</h3>
+                <p>Cuando la <strong>Facturación Electrónica DIAN</strong> está habilitada, aparece un campo adicional en el POS:</p>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Busque y seleccione el <strong>Receptor Fiscal</strong> (autocomplete de Terceros)
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Si deja el campo vacío, la venta se procesa como <em>Consumidor Final</em> (sin FE específica)
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Solo los terceros con datos fiscales completos (tipo de documento, número, régimen, código DANE) generarán un XML FE válido.
+                </div>
+
+                <h3>Procesar Pago</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Seleccione el <strong>Método de Pago</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Si paga con efectivo:
+                    <ul>
+                        <li>Ingrese el <strong>Monto Recibido</strong></li>
+                        <li>El sistema calcula el <strong>Cambio</strong> automáticamente</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Si paga con tarjeta/transferencia:
+                    <ul>
+                        <li>Ingrese el <strong>Número de Referencia</strong> (opcional)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Haga clic en <strong>"Confirmar Venta"</strong>
+                </div>
+
+                <h3>Venta Completada</h3>
+                <p>El sistema automáticamente:</p>
+                <ul>
+                    <li>✅ Deduce productos del inventario</li>
+                    <li>✅ Genera número de factura</li>
+                    <li>✅ Registra la venta en el historial</li>
+                    <li>✅ Actualiza la sesión de caja</li>
+                    <li>✅ Permite imprimir ticket</li>
+                </ul>
+
+                <div class="alert alert-success">
+                    <strong>🖨️ Impresión:</strong> Configure su impresora térmica desde Configuración → Impresoras.
+                </div>
+
+                <h3>Ventas con Múltiples Pagos</h3>
+                <p>Puede aceptar pagos combinados:</p>
+                <ul>
+                    <li>Efectivo + Tarjeta</li>
+                    <li>Efectivo parcial + Crédito</li>
+                </ul>
+
+                <div class="step">
+                    <span class="step-number">1</span>
+                    En la pantalla de pago, haga clic en <strong>"Agregar Otro Pago"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Defina el monto de cada método hasta cubrir el total
+                </div>
+
+                <h3>Cerrar Sesión de Caja</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Al finalizar el turno, haga clic en <strong>"Cerrar Sesión"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Realice el <strong>Conteo de Efectivo</strong> físico
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese el <strong>Monto Real</strong> en caja
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    El sistema calcula:
+                    <ul>
+                        <li>Monto Esperado (inicial + ventas - retiros)</li>
+                        <li><strong>Diferencia:</strong> Real vs Esperado</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Confirme para cerrar
+                </div>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Diferencias:</strong> Las diferencias significativas deben investigarse. El sistema guarda un registro permanente.
+                </div>
+            </section>
+
+            <!-- VENTAS -->
+            <section id="ventas" class="section">
+                <h2>📈 Consulta de Ventas</h2>
+
+                <h3>Vista de Ventas</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Operaciones → Ventas</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Filtre por:
+                    <ul>
+                        <li>Rango de fechas</li>
+                        <li>Cliente</li>
+                        <li>Usuario que realizó la venta</li>
+                        <li>Estado (Completada, Anulada)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Para cada venta vea:
+                    <ul>
+                        <li>Número de factura</li>
+                        <li>Fecha y hora</li>
+                        <li>Cliente</li>
+                        <li>Total</li>
+                        <li>Método de pago</li>
+                        <li>Estado</li>
+                    </ul>
+                </div>
+
+                <h3>Ver Detalle de Venta</h3>
+                <p>Haga clic en una venta para ver:</p>
+                <ul>
+                    <li>Productos vendidos (lista detallada)</li>
+                    <li>Cantidades y precios</li>
+                    <li>Descuentos aplicados</li>
+                    <li>Impuestos desglosados</li>
+                    <li>Información del cliente</li>
+                    <li>Usuario cajero</li>
+                    <li>Sesión de caja</li>
+                </ul>
+
+                <h3>Anular Venta</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Abra el detalle de la venta
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"Anular Venta"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese el <strong>Motivo</strong> de anulación (obligatorio)
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Confirme
+                </div>
+
+                <p>El sistema:</p>
+                <ul>
+                    <li>✅ Devuelve productos al inventario</li>
+                    <li>✅ Ajusta la sesión de caja</li>
+                    <li>✅ Marca la venta como <span class="badge badge-danger">ANULADA</span></li>
+                    <li>✅ Guarda el motivo de anulación</li>
+                </ul>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Permisos:</strong> Solo usuarios con el permiso "Anular Ventas" pueden hacerlo.
+                </div>
+
+                <h3>Reimprimir Ticket</h3>
+                <p>Puede reimprimir el ticket de cualquier venta desde su detalle.</p>
+
+                <h3>Devoluciones (Parciales o Totales)</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    En la venta <strong>Completada</strong>, haga clic en <strong>"Devolver"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione los productos y cantidades a devolver (sin exceder lo pendiente por devolver)
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese el motivo de la devolución
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Registre el <strong>reembolso por método de pago</strong>:
+                    <ul>
+                        <li>Puede usar uno o varios métodos</li>
+                        <li>El total de reembolso debe cuadrar con el total devuelto</li>
+                        <li>Puede capturar referencia por método (voucher, transferencia, etc.)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Confirme la devolución
+                </div>
+
+                <p>El sistema:</p>
+                <ul>
+                    <li>✅ Incrementa inventario de las unidades devueltas</li>
+                    <li>✅ Registra la devolución y sus líneas</li>
+                    <li>✅ Registra el detalle de reembolsos por método</li>
+                    <li>✅ Actualiza el estado de la venta (devuelta total o parcial)</li>
+                </ul>
+
+                <div class="alert alert-info">
+                    <strong>💡 Recomendación:</strong> Use el botón <strong>"Auto distribuir"</strong> cuando quiera repartir el total devuelto entre varios métodos de reembolso.
+                </div>
+            </section>
+
+            <!-- CARTERA -->
+            <section id="cartera" class="section">
+                <h2>💳 Cartera (Ventas a Crédito)</h2>
+
+                <p>El módulo de Cartera permite controlar cuentas por cobrar de clientes, registrar abonos y monitorear saldos en tiempo real.</p>
+
+                <h3>Acceder al módulo</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Operaciones → Cartera</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Use filtros y búsqueda para encontrar clientes con deuda
+                </div>
+
+                <h3>Flujo básico de cartera</h3>
+                <ul>
+                    <li>Crear/activar cuenta de crédito por cliente</li>
+                    <li>Definir cupo de crédito</li>
+                    <li>Registrar ventas a crédito</li>
+                    <li>Registrar abonos parciales o totales</li>
+                    <li>Consultar historial de movimientos (venta/abono)</li>
+                </ul>
+
+                <h3>Alertas en tiempo real (campana)</h3>
+                <p>La campana global de alertas incluye una pestaña <strong>Cartera</strong> con dos niveles:</p>
+                <ul>
+                    <li><span class="badge badge-warning">Con saldo</span> Cliente con deuda activa</li>
+                    <li><span class="badge badge-danger">Cupo excedido</span> Saldo actual mayor al cupo configurado</li>
+                </ul>
+
+                <p>Desde esta vista puede:</p>
+                <ul>
+                    <li>Filtrar por nivel de alerta</li>
+                    <li>Buscar por cliente o documento</li>
+                    <li>Ir directamente al módulo de Cartera</li>
+                </ul>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Control operativo:</strong> mantener cartera al día reduce riesgo de sobreendeudamiento y mejora el flujo de caja.
+                </div>
+            </section>
+
+            <!-- LAYAWAY -->
+            <section id="layaway" class="section">
+                <h2>💎 Plan Separe (Layaway)</h2>
+
+                <p>El Plan Separe permite a los clientes reservar productos pagando por cuotas.</p>
+
+                <h3>Crear Contrato de Separe</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Operaciones → Plan Separe</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"+ Nuevo Contrato"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Seleccione el <strong>Cliente</strong> (obligatorio para separe)
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Agregue productos (igual que en venta normal)
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Configure el plan de pagos:
+                    <ul>
+                        <li><strong>Enganche Inicial:</strong> % o monto (mínimo 10%)</li>
+                        <li><strong>Fecha Límite:</strong> Hasta cuándo debe liquidar</li>
+                        <li><strong>Notas:</strong> Condiciones adicionales</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">6</span>
+                    Procese el <strong>Pago Inicial</strong>
+                </div>
+
+                <h3>Estado del Contrato</h3>
+                <p>Un contrato de separe puede estar en:</p>
+                <ul>
+                    <li><span class="badge badge-warning">ACTIVO:</span> Con saldo pendiente</li>
+                    <li><span class="badge badge-success">LIQUIDADO:</span> Pagado completamente, listo para entregar</li>
+                    <li><span class="badge badge-primary">ENTREGADO:</span> Producto entregado al cliente</li>
+                    <li><span class="badge badge-danger">CANCELADO:</span> Cliente desistió</li>
+                    <li><span class="badge badge-danger">VENCIDO:</span> Pasó la fecha límite sin liquidar</li>
+                </ul>
+
+                <h3>Registrar Abono</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Haga clic en el contrato
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"Registrar Abono"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Ingrese:
+                    <ul>
+                        <li>Monto del abono</li>
+                        <li>Método de pago</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    El sistema actualiza el saldo automáticamente
+                </div>
+
+                <h3>Liquidar y Entregar</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Cuando el saldo llegue a $0, el estado cambia a <span class="badge badge-success">LIQUIDADO</span>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Haga clic en <strong>"Marcar como Entregado"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    El sistema:
+                    <ul>
+                        <li>✅ Descuenta productos del inventario</li>
+                        <li>✅ Genera la factura de venta</li>
+                        <li>✅ Libera la reserva</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Reserva:</strong> Los productos en separe están "reservados" - aparecen como stock no disponible para otros clientes.
+                </div>
+
+                <h3>Cancelar Contrato</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Haga clic en <strong>"Cancelar Contrato"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Ingrese el <strong>Motivo</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Defina si hay <strong>Reembolso</strong>:
+                    <ul>
+                        <li>Total: Devolver todo lo pagado</li>
+                        <li>Parcial: Devolver un % (menos penalidad)</li>
+                        <li>Sin reembolso: Perder lo pagado</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- SESIONES DE CAJA -->
+            <section id="sesiones-caja" class="section">
+                <h2>💼 Sesiones de Caja</h2>
+
+                <h3>Consultar Sesiones</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Control → Sesiones de Caja</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Filtre por:
+                    <ul>
+                        <li>Fecha</li>
+                        <li>Caja</li>
+                        <li>Usuario</li>
+                        <li>Estado (Abierta/Cerrada)</li>
+                    </ul>
+                </div>
+
+                <h3>Detalle de Sesión</h3>
+                <p>Haga clic en una sesión para ver:</p>
+                <ul>
+                    <li><strong>Información General:</strong>
+                        <ul>
+                            <li>Caja y usuario</li>
+                            <li>Fecha/hora de apertura y cierre</li>
+                            <li>Duración</li>
+                        </ul>
+                    </li>
+                    <li><strong>Movimientos de Efectivo:</strong>
+                        <ul>
+                            <li>Monto inicial</li>
+                            <li>Entradas (ventas en efectivo)</li>
+                            <li>Salidas (retiros, gastos)</li>
+                            <li>Monto esperado</li>
+                            <li>Monto real (conteo)</li>
+                            <li>Diferencia</li>
+                        </ul>
+                    </li>
+                    <li><strong>Resumen de Ventas:</strong>
+                        <ul>
+                            <li>Cantidad de transacciones</li>
+                            <li>Total vendido</li>
+                            <li>Desglose por método de pago</li>
+                        </ul>
+                    </li>
+                    <li><strong>Lista de Ventas:</strong> Todas las ventas de esa sesión</li>
+                </ul>
+
+                <h3>Retiros de Efectivo</h3>
+                <p>Durante una sesión activa, puede hacer retiros de efectivo de la caja:</p>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Con una sesión abierta, haga clic en <strong>"Retiro de Efectivo"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Ingrese:
+                    <ul>
+                        <li>Monto a retirar</li>
+                        <li>Motivo (obligatorio)</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    El sistema ajusta el monto esperado al cierre
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>💡 Consejo:</strong> Realice retiros periódicos para no acumular mucho efectivo en la caja (seguridad).
+                </div>
+            </section>
+
+            <!-- ALERTAS GLOBALES -->
+            <section id="alertas-globales" class="section">
+                <h2>Alertas Globales (Tiempo Real)</h2>
+                <p>La campana superior centraliza alertas operativas del tenant en tiempo real.</p>
+                <h3>Tipos de alerta</h3>
+                <ul>
+                    <li><strong>Stock:</strong> sin stock, stock bajo, disponible bajo</li>
+                    <li><strong>Vencimientos:</strong> lotes vencidos o proximos a vencer</li>
+                    <li><strong>Plan Separe:</strong> contratos vencidos o por vencer</li>
+                    <li><strong>CxP:</strong> cuentas por pagar vencidas o por vencer</li>
+                    <li><strong>Cartera:</strong> clientes con saldo o con cupo excedido</li>
+                </ul>
+                <h3>Acciones rapidas</h3>
+                <ul>
+                    <li>Aplicar filtros por nivel y busqueda</li>
+                    <li>Navegar al modulo origen: Inventario, Lotes, Plan Separe, Compras o Cartera</li>
+                    <li>Actualizar manualmente desde cada pestana</li>
+                </ul>
+                <div class="alert alert-info">
+                    <strong>Nota:</strong> ademas del tiempo real, el sistema ejecuta refrescos programados para asegurar consistencia de alertas.
+                </div>
+            </section>
+
+            <!-- REPORTES -->
+            <section id="reportes" class="section">
+                <h2>📊 Reportes y Análisis</h2>
+
+                <h3>Reportes Disponibles</h3>
+
+                <h4>1. Reporte de Ventas</h4>
+                <p>Análisis de ventas por período con gráficos y tablas.</p>
+                <ul>
+                    <li>Ventas totales</li>
+                    <li>Ventas por día/semana/mes</li>
+                    <li>Productos más vendidos</li>
+                    <li>Ventas por categoría</li>
+                    <li>Ventas por usuario</li>
+                    <li>Ventas por método de pago</li>
+                </ul>
+
+                <h4>2. Reporte de Inventario</h4>
+                <p>Estado actual del inventario.</p>
+                <ul>
+                    <li>Valor total del inventario</li>
+                    <li>Productos con stock bajo</li>
+                    <li>Productos sin movimiento</li>
+                    <li>Próximos a vencer</li>
+                    <li>Productos por ubicación</li>
+                </ul>
+
+                <h4>3. Reporte de Producción</h4>
+                <p>Análisis de manufactura.</p>
+                <ul>
+                    <li>Órdenes completadas</li>
+                    <li>Productos manufacturados</li>
+                    <li>Costos de producción</li>
+                    <li>Componentes más utilizados</li>
+                    <li>Eficiencia de producción</li>
+                </ul>
+
+                <h4>4. Reporte de Cajas</h4>
+                <p>Rendimiento de cajas y cajeros.</p>
+                <ul>
+                    <li>Ventas por caja</li>
+                    <li>Ventas por cajero</li>
+                    <li>Sesiones con diferencias</li>
+                    <li>Tiempo promedio por transacción</li>
+                </ul>
+
+                <h4>5. Reporte Financiero</h4>
+                <p>Análisis financiero del negocio.</p>
+                <ul>
+                    <li>Ingresos vs Gastos</li>
+                    <li>Utilidad bruta</li>
+                    <li>Margen de ganancia</li>
+                    <li>Flujo de efectivo</li>
+                </ul>
+
+                <h3>Generar Reporte</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Reportes</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Seleccione el tipo de reporte
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Configure filtros:
+                    <ul>
+                        <li>Rango de fechas</li>
+                        <li>Ubicación(es)</li>
+                        <li>Categorías</li>
+                        <li>Usuarios</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Haga clic en <strong>"Generar"</strong>
+                </div>
+
+                <h3>Exportar Reportes</h3>
+                <p>Los reportes pueden exportarse en:</p>
+                <ul>
+                    <li>📄 PDF - Para imprimir o archivar</li>
+                    <li>📊 Excel - Para análisis adicional</li>
+                    <li>📋 CSV - Para importar en otros sistemas</li>
+                </ul>
+
+                <div class="alert alert-success">
+                    <strong>✅ Dashboard:</strong> Los reportes más importantes se resumen en el Dashboard principal al iniciar sesión.
+                </div>
+            </section>
+
+            <!-- FUNCIONES IA -->
+            <section id="funciones-ia" class="section">
+                <h2>Funciones de IA</h2>
+
+                <p>POSLite incluye funciones de inteligencia artificial para apoyar decisiones de ventas y compras. Estas funciones se habilitan por tenant y dependen de la configuración de la integración IA.</p>
+
+                <h3>Pronóstico de Ventas</h3>
+                <ul>
+                    <li>Analiza histórico por sede y periodo.</li>
+                    <li>Genera proyección de demanda y tendencias.</li>
+                    <li>Sugiere acciones de reposición y planificación.</li>
+                </ul>
+
+                <h3>Asesor de Compras</h3>
+                <ul>
+                    <li>Evalúa rotación, stock y alertas.</li>
+                    <li>Sugiere productos y cantidades para reabastecer.</li>
+                    <li>Prioriza ítems críticos (quiebre o riesgo operativo).</li>
+                </ul>
+
+                <h3>Requisitos técnicos</h3>
+                <ul>
+                    <li>Configurar endpoint y llave de IA en backend/edge function.</li>
+                    <li>Habilitar flags de IA en configuración del tenant.</li>
+                    <li>Contar con datos históricos suficientes para mejores resultados.</li>
+                </ul>
+
+                <div class="alert alert-warning">
+                    <strong>Importante:</strong> la IA asiste la decisión, pero no reemplaza la validación comercial y financiera del responsable operativo.
+                </div>
+            </section>
+
+            <!-- FACTURACIÓN ELECTRÓNICA -->
+            <section id="facturacion-electronica" class="section">
+                <h2>🧾 Facturación Electrónica DIAN</h2>
+
+                <p>POS Lite incluye soporte nativo para la <strong>Facturación Electrónica (FE)</strong> según la normativa DIAN de Colombia. El sistema opera en modo <em>dual</em>: las ventas se crean normalmente en el POS y, si la FE está habilitada, el XML se genera y envía al proveedor tecnológico autorizado (PT).</p>
+
+                <div class="alert alert-warning">
+                    <strong>⚠️ Prerrequisito:</strong> Debe ejecutar las migraciones <code>ADD_ELECTRONIC_INVOICING.sql</code> y <code>ADD_FE_COMPLEMENTARY.sql</code> en su base de datos antes de activar este módulo.
+                </div>
+
+                <h3>Paso 1 — Configurar el Emisor</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Configuración → Tenant → Facturación Electrónica</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    Active el interruptor <strong>"Facturación Electrónica Habilitada"</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Complete los datos del emisor (empresa facturadora):
+                    <ul>
+                        <li><strong>NIT / DV:</strong> Número de identificación tributaria y dígito de verificación</li>
+                        <li><strong>Razón Social:</strong> Nombre legal registrado ante la DIAN</li>
+                        <li><strong>Régimen tributario:</strong> SIMPLE / ORDINARIO / GRAN_CONTRIB</li>
+                        <li><strong>Responsable de IVA:</strong> Sí/No</li>
+                        <li><strong>Obligado a llevar contabilidad:</strong> Sí/No</li>
+                        <li><strong>Dirección:</strong> Dirección física del emisor</li>
+                        <li><strong>Ciudad:</strong> Ciudad del emisor</li>
+                        <li><strong>Código DANE:</strong> 5 dígitos del municipio (Ej: <strong>11001</strong> = Bogotá D.C.) — <em>requerido en el XML</em></li>
+                        <li><strong>Departamento:</strong> Ej: Cundinamarca</li>
+                        <li><strong>Código postal:</strong> Ej: 110111</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">4</span>
+                    Configure el <strong>Proveedor Tecnológico (PT):</strong> URL del endpoint, API key, ambiente (TEST/PROD) y prefijo de factura
+                </div>
+                <div class="step">
+                    <span class="step-number">5</span>
+                    Configure la <strong>Resolución DIAN:</strong> número de resolución, rango y vigencia
+                </div>
+
+                <h3>Paso 2 — Configurar los Métodos de Pago</h3>
+                <p>Cada método de pago tiene un <strong>código DIAN</strong> que se incluye en el XML. El sistema asigna automáticamente los códigos más comunes:</p>
+                <table>
+                    <thead>
+                        <tr><th>Método</th><th>Código DIAN</th><th>Descripción DIAN</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Efectivo / Cash</td><td><strong>10</strong></td><td>Efectivo</td></tr>
+                        <tr><td>Tarjeta Crédito</td><td><strong>48</strong></td><td>Tarjeta de crédito</td></tr>
+                        <tr><td>Tarjeta Débito</td><td><strong>49</strong></td><td>Tarjeta de débito</td></tr>
+                        <tr><td>Transferencia</td><td><strong>22</strong></td><td>Cheque / transferencia</td></tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-info">
+                    <strong>💡 Nota:</strong> Si su PT requiere un código diferente, actualice el campo <code>dian_payment_code</code> del método de pago directamente en la base de datos.
+                </div>
+
+                <h3>Paso 3 — Preparar los Productos</h3>
+                <p>Para cada variante que se factura electrónicamente, configure en la sección <strong>"Facturación Electrónica (DIAN)"</strong> del formulario de variante:</p>
+                <ul>
+                    <li><strong>Unidad DIAN:</strong> Ej: UND (Unidad)</li>
+                    <li><strong>Código Estándar:</strong> Código UNSPSC del bien/servicio</li>
+                    <li><strong>Tipo de Código:</strong> UNSPSC (recomendado por la DIAN)</li>
+                </ul>
+
+                <h3>Paso 4 — Preparar los Terceros</h3>
+                <p>Para que un tercero aparezca como receptor en la FE, debe tener completados:</p>
+                <ul>
+                    <li>Tipo de documento y número</li>
+                    <li>Régimen tributario</li>
+                    <li>Dirección y <strong>Código DANE del municipio</strong></li>
+                </ul>
+
+                <h3>Uso en el Punto de Venta</h3>
+                <p>Cuando la FE está habilitada, aparece el campo <strong>"Receptor Fiscal (FE)"</strong> en el POS (ver sección <a href="#pos">Punto de Venta</a>). Si se deja vacío, la venta se registra como <em>Consumidor Final</em>.</p>
+
+                <h3>Seguimiento de Facturas en Ventas</h3>
+                <div class="step">
+                    <span class="step-number">1</span>
+                    Vaya a <strong>Operaciones → Ventas</strong>
+                </div>
+                <div class="step">
+                    <span class="step-number">2</span>
+                    En cada venta verá un chip de estado FE:
+                    <ul>
+                        <li>🔵 <strong>Sin enviar</strong> — Venta sin FE iniciada</li>
+                        <li>🟡 <strong>Pendiente</strong> — XML generado, esperando respuesta del PT</li>
+                        <li>🟢 <strong>Enviado / Aprobado</strong> — CUFE asignado, FE válida</li>
+                        <li>🔴 <strong>Error / Rechazado</strong> — El PT devolvió error; puede reintentar</li>
+                    </ul>
+                </div>
+                <div class="step">
+                    <span class="step-number">3</span>
+                    Haga clic en una venta para ver el detalle. En el panel lateral encontrará:
+                    <ul>
+                        <li>CUFE (Código Único de Factura Electrónica)</li>
+                        <li>Número de factura asignado</li>
+                        <li>Receptor fiscal</li>
+                        <li>Botón <strong>"Reintentar envío"</strong> (visible cuando el estado es Pendiente, Error o Rechazado)</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-success">
+                    <strong>✅ Modo dual:</strong> Aunque la FE falle o sea rechazada, la venta queda registrada y el inventario se descuenta normalmente. La FE es un proceso separado que puede reintentarse.
+                </div>
+
+                <h3>Preguntas Frecuentes FE</h3>
+                <table>
+                    <thead>
+                        <tr><th>Pregunta</th><th>Respuesta</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>¿Qué pasa si el PT no responde?</td>
+                            <td>La venta queda en estado <em>Pendiente</em>. Puede reintentar desde la vista de Ventas.</td>
+                        </tr>
+                        <tr>
+                            <td>¿Puedo usar sólo algunos productos con FE?</td>
+                            <td>Sí. Los que no tengan <code>standard_code</code> se incluirán en el XML sin ese campo (el PT puede aceptarlo dependiendo de su configuración).</td>
+                        </tr>
+                        <tr>
+                            <td>¿El sistema envía el correo al receptor?</td>
+                            <td>Actualmente el envío de correo queda registrado como pendiente (<code>email_sent_at</code>). La integración de envío automático se implementa según la configuración del PT.</td>
+                        </tr>
+                        <tr>
+                            <td>¿Qué es el CUFE?</td>
+                            <td>Código Único de Factura Electrónica. Lo asigna la DIAN a través de su PT y es el identificador oficial de la factura.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- PIE DE PÁGINA -->
+            <section class="section" style="background: #f9f9f9; margin-top: 50px;">
+                <h2>📞 Soporte y Ayuda</h2>
+                
+                <h3>¿Necesita Ayuda?</h3>
+                <p>Si tiene problemas o preguntas:</p>
+                <ul>
+                    <li>📧 Email de soporte: soporte@poslite.com</li>
+                    <li>📱 WhatsApp: +57 300 123 4567</li>
+                    <li>🌐 Centro de ayuda: https://ayuda.poslite.com</li>
+                    <li>💬 Chat en vivo: Disponible en el sistema (esquina inferior derecha)</li>
+                </ul>
+
+                <h3>Recursos Adicionales</h3>
+                <ul>
+                    <li>🎥 <a href="#">Videos tutoriales</a></li>
+                    <li>📚 <a href="#">Base de conocimientos</a></li>
+                    <li>❓ <a href="#">Preguntas frecuentes (FAQ)</a></li>
+                    <li>🔄 <a href="#">Notas de versión</a></li>
+                </ul>
+
+                <div style="margin-top: 30px; padding-top: 30px; border-top: 1px solid #ddd; text-align: center; color: #757575;">
+                    <p><strong>POS Lite</strong> - Sistema de Punto de Venta</p>
+                    <p>Versión 1.0 - © 2026 Todos los derechos reservados</p>
+                    <p>Última actualización de este manual: Febrero 28, 2026</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Scroll suave para navegación
+        document.querySelectorAll('.nav-item').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetSection = document.querySelector(targetId);
+                if (targetSection) {
+                    targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    // Marcar como activo
+                    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+                    this.classList.add('active');
+                }
+            });
+        });
+
+        // Resaltar sección activa al hacer scroll
+        window.addEventListener('scroll', function() {
+            const sections = document.querySelectorAll('.section');
+            const navItems = document.querySelectorAll('.nav-item');
+            
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (window.pageYOffset >= sectionTop - 100) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('href') === '#' + current) {
+                    item.classList.add('active');
+                }
+            });
+        });
+
+        // Imprimir
+        function printManual() {
+            window.print();
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
