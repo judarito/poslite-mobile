@@ -5,7 +5,25 @@ function catalogCacheKey(tenantId, locationId) {
   return `pos-catalog:${tenantId}:${locationId || 'na'}`;
 }
 
-export async function getPaymentMethodsForDropdown(tenantId) {
+function paymentMethodsCacheKey(tenantId) {
+  return `pos-payment-methods:${tenantId}`;
+}
+
+function customersCacheKey(tenantId) {
+  return `pos-customers:${tenantId}`;
+}
+
+function sessionCacheKey(tenantId, userId) {
+  return `pos-open-session:${tenantId}:${userId}`;
+}
+
+export async function getPaymentMethodsForDropdown(tenantId, { offlineMode = false } = {}) {
+  const cacheKey = paymentMethodsCacheKey(tenantId);
+  if (offlineMode) {
+    const cached = await getSimpleCache(cacheKey);
+    return { success: true, data: cached?.value || [] };
+  }
+
   try {
     const { data, error } = await supabase
       .from('payment_methods')
@@ -17,13 +35,30 @@ export async function getPaymentMethodsForDropdown(tenantId) {
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return { success: true, data: data || [] };
+    const list = data || [];
+    await saveSimpleCache(cacheKey, list);
+    return { success: true, data: list };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return {
+        success: true,
+        data: cached.value,
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, error: error.message, data: [] };
   }
 }
 
-export async function getCurrentUserOpenSession(tenantId, userId) {
+export async function getCurrentUserOpenSession(tenantId, userId, { offlineMode = false } = {}) {
+  const cacheKey = sessionCacheKey(tenantId, userId);
+  if (offlineMode) {
+    const cached = await getSimpleCache(cacheKey);
+    return { success: true, data: cached?.value || null };
+  }
+
   try {
     const { data, error } = await supabase
       .from('cash_sessions')
@@ -47,8 +82,18 @@ export async function getCurrentUserOpenSession(tenantId, userId) {
       .maybeSingle();
 
     if (error) throw error;
+    await saveSimpleCache(cacheKey, data || null);
     return { success: true, data: data || null };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return {
+        success: true,
+        data: cached.value,
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, error: error.message, data: null };
   }
 }
@@ -121,6 +166,15 @@ export async function searchVariants(tenantId, search, limit = 20, locationId = 
 
     return { success: true, data: results };
   } catch (error) {
+    const fallback = await searchVariantsOffline(tenantId, search, limit, locationId);
+    if (fallback.success && fallback.data.length > 0) {
+      return {
+        success: true,
+        data: fallback.data,
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, error: error.message, data: [] };
   }
 }
@@ -177,8 +231,13 @@ export async function warmPosCatalog(tenantId, locationId = null, limit = 2000) 
 
 export async function searchVariantsOffline(tenantId, search, limit = 20, locationId = null) {
   try {
-    const cached = await getSimpleCache(catalogCacheKey(tenantId, locationId));
-    const list = cached?.value || [];
+    const [cachedByLocation, cachedGeneric] = await Promise.all([
+      getSimpleCache(catalogCacheKey(tenantId, locationId)),
+      getSimpleCache(catalogCacheKey(tenantId, null)),
+    ]);
+    const list = (cachedByLocation?.value || []).length
+      ? cachedByLocation.value
+      : (cachedGeneric?.value || []);
     const q = String(search || '').trim().toLowerCase();
     if (!q) return { success: true, data: [] };
 
@@ -198,17 +257,67 @@ export async function searchVariantsOffline(tenantId, search, limit = 20, locati
 }
 
 export async function searchCustomers(tenantId, search, limit = 20) {
+  const q = String(search || '').trim();
   try {
     const { data, error } = await supabase
       .from('customers')
       .select('customer_id, full_name, document, phone')
       .eq('tenant_id', tenantId)
-      .or(`full_name.ilike.%${search}%,document.ilike.%${search}%,phone.ilike.%${search}%`)
+      .or(`full_name.ilike.%${q}%,document.ilike.%${q}%,phone.ilike.%${q}%`)
       .order('full_name', { ascending: true })
       .limit(limit);
 
     if (error) throw error;
     return { success: true, data: data || [] };
+  } catch (error) {
+    const fallback = await searchCustomersOffline(tenantId, q, limit);
+    if (fallback.success && fallback.data.length > 0) {
+      return {
+        success: true,
+        data: fallback.data,
+        source: 'cache',
+        warning: error.message,
+      };
+    }
+    return { success: false, error: error.message, data: [] };
+  }
+}
+
+export async function warmCustomersCatalog(tenantId, limit = 5000) {
+  try {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('customer_id, full_name, document, phone')
+      .eq('tenant_id', tenantId)
+      .order('full_name', { ascending: true })
+      .limit(limit);
+
+    if (error) throw error;
+    const list = data || [];
+    await saveSimpleCache(customersCacheKey(tenantId), list);
+    return { success: true, data: list };
+  } catch (error) {
+    return { success: false, error: error.message, data: [] };
+  }
+}
+
+export async function searchCustomersOffline(tenantId, search, limit = 20) {
+  try {
+    const cached = await getSimpleCache(customersCacheKey(tenantId));
+    const list = cached?.value || [];
+    const q = String(search || '').trim().toLowerCase();
+    if (!q) return { success: true, data: [] };
+
+    const filtered = list
+      .filter((item) => {
+        const fullName = String(item.full_name || '').toLowerCase();
+        const document = String(item.document || '').toLowerCase();
+        const phone = String(item.phone || '').toLowerCase();
+        return fullName.includes(q) || document.includes(q) || phone.includes(q);
+      })
+      .slice(0, limit);
+
+    return { success: true, data: filtered };
   } catch (error) {
     return { success: false, error: error.message, data: [] };
   }

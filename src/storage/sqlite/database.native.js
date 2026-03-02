@@ -233,7 +233,7 @@ export async function enqueuePendingOp(op) {
 export async function getPendingOpsCount() {
   const db = await getDb();
   const row = await db.getFirstAsync(
-    `SELECT COUNT(*) AS total FROM pending_ops WHERE status = 'PENDING'`,
+    `SELECT COUNT(*) AS total FROM pending_ops WHERE status IN ('PENDING','FAILED')`,
   );
   return Number(row?.total || 0);
 }
@@ -247,6 +247,7 @@ export async function getPendingOps(limit = 50) {
         retry_count, last_error, created_at, updated_at
       FROM pending_ops
       WHERE status IN ('PENDING', 'FAILED')
+        AND (last_error IS NULL OR last_error NOT LIKE 'NO_RETRY:%')
       ORDER BY created_at ASC
       LIMIT ?
     `,
@@ -323,5 +324,101 @@ export async function resetStuckProcessingOps() {
       WHERE status = 'PROCESSING'
     `,
     [now],
+  );
+}
+
+export async function getPendingSaleOps(tenantId, limit = 200) {
+  const db = await getDb();
+  const rows = await db.getAllAsync(
+    `
+      SELECT
+        op_id, tenant_id, payload, status, retry_count, last_error, created_at, updated_at
+      FROM pending_ops
+      WHERE op_type = 'CREATE_SALE'
+        AND status IN ('PENDING','FAILED')
+        AND tenant_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `,
+    [tenantId, limit],
+  );
+
+  return (rows || []).map((row) => ({
+    opId: row.op_id,
+    tenantId: row.tenant_id,
+    payload: JSON.parse(row.payload || '{}'),
+    status: row.status,
+    retryCount: Number(row.retry_count || 0),
+    lastError: row.last_error || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function getPendingSaleOpById(opId) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(
+    `
+      SELECT
+        op_id, tenant_id, payload, status, retry_count, last_error, created_at, updated_at
+      FROM pending_ops
+      WHERE op_type = 'CREATE_SALE'
+        AND op_id = ?
+        AND status IN ('PENDING','FAILED')
+      LIMIT 1
+    `,
+    [opId],
+  );
+
+  if (!row) return null;
+  return {
+    opId: row.op_id,
+    tenantId: row.tenant_id,
+    payload: JSON.parse(row.payload || '{}'),
+    status: row.status,
+    retryCount: Number(row.retry_count || 0),
+    lastError: row.last_error || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function retryPendingOp(opId) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET status = 'PENDING',
+          last_error = NULL,
+          updated_at = ?
+      WHERE op_id = ?
+    `,
+    [now, opId],
+  );
+}
+
+export async function discardPendingOp(opId) {
+  const db = await getDb();
+  await db.runAsync(
+    `
+      DELETE FROM pending_ops
+      WHERE op_id = ?
+    `,
+    [opId],
+  );
+}
+
+export async function updatePendingOpPayload(opId, payload) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET payload = ?,
+          updated_at = ?
+      WHERE op_id = ?
+    `,
+    [JSON.stringify(payload || {}), now, opId],
   );
 }

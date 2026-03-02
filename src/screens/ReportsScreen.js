@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useThemeMode } from '../lib/themeMode';
 import { getSimpleCache, saveSimpleCache } from '../services/offlineCache.service';
 import { getReportsSnapshot, listReportLocations } from '../services/reports.service';
 
@@ -37,6 +38,8 @@ export default function ReportsScreen({
   const [cacheInfo, setCacheInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
 
   useEffect(() => {
     setTab(initialTab || 'sales');
@@ -127,15 +130,15 @@ export default function ReportsScreen({
         : 'Sin fuente';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.heroCard}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
+      <View style={[styles.heroCard, isLightTheme && styles.heroCardLight]}>
         <View style={styles.heroTop}>
-          <Text style={styles.heroTitle}>Centro de Reportes</Text>
+          <Text style={[styles.heroTitle, isLightTheme && styles.heroTitleLight]}>Centro de Reportes</Text>
           <View style={[styles.sourcePill, cacheInfo?.source === 'cache' ? styles.sourcePillCache : styles.sourcePillServer]}>
             <Text style={styles.sourcePillText}>{sourceLabel}</Text>
           </View>
         </View>
-        <Text style={styles.heroSub}>Periodo: {fromDate} a {toDate}</Text>
+        <Text style={[styles.heroSub, isLightTheme && styles.heroSubLight]}>Periodo: {fromDate} a {toDate}</Text>
         {loading ? <ActivityIndicator color="#38bdf8" style={{ marginTop: 8 }} /> : null}
       </View>
 
@@ -144,15 +147,15 @@ export default function ReportsScreen({
           {TABS.map((entry) => {
             const active = tab === entry.key;
             return (
-              <Pressable
-                key={entry.key}
-                style={[styles.tabBtn, active && styles.tabBtnActive]}
-                onPress={() => setTab(entry.key)}
-              >
-                <Text style={[styles.tabText, active && styles.tabTextActive]}>{entry.label}</Text>
-              </Pressable>
-            );
-          })}
+                <Pressable
+                  key={entry.key}
+                  style={[styles.tabBtn, isLightTheme && styles.tabBtnLight, active && styles.tabBtnActive]}
+                  onPress={() => setTab(entry.key)}
+                >
+                  <Text style={[styles.tabText, isLightTheme && styles.tabTextLight, active && styles.tabTextActive]}>{entry.label}</Text>
+                </Pressable>
+              );
+            })}
         </View>
       </ScrollView>
 
@@ -165,18 +168,18 @@ export default function ReportsScreen({
           ].map((preset) => (
             <Pressable
               key={preset.label}
-              style={styles.filterChip}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight]}
               onPress={() => {
                 const next = getPresetRange(preset.days);
                 setFromDate(next.from);
                 setToDate(next.to);
               }}
             >
-              <Text style={styles.filterChipText}>{preset.label}</Text>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight]}>{preset.label}</Text>
             </Pressable>
           ))}
-          <Pressable style={styles.filterChip} onPress={loadSnapshot}>
-            <Text style={styles.filterChipText}>{loading ? 'Cargando...' : 'Recargar'}</Text>
+          <Pressable style={[styles.filterChip, isLightTheme && styles.filterChipLight]} onPress={loadSnapshot}>
+            <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight]}>{loading ? 'Cargando...' : 'Recargar'}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -184,10 +187,10 @@ export default function ReportsScreen({
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <View style={styles.chipsRow}>
           <Pressable
-            style={[styles.filterChip, !locationId && styles.filterChipActive]}
+            style={[styles.filterChip, isLightTheme && styles.filterChipLight, !locationId && styles.filterChipActive]}
             onPress={() => setLocationId('')}
           >
-            <Text style={[styles.filterChipText, !locationId && styles.filterChipTextActive]}>
+            <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, !locationId && styles.filterChipTextActive]}>
               Todas las sedes
             </Text>
           </Pressable>
@@ -196,10 +199,10 @@ export default function ReportsScreen({
             return (
               <Pressable
                 key={loc.location_id}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
                 onPress={() => setLocationId(loc.location_id)}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
                   {loc.name}
                 </Text>
               </Pressable>
@@ -209,9 +212,9 @@ export default function ReportsScreen({
       </ScrollView>
 
       <View style={styles.metaWrap}>
-        <Text style={styles.metaText}>Vista: {TABS.find((t) => t.key === tab)?.label || 'Reportes'}</Text>
+        <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Vista: {TABS.find((t) => t.key === tab)?.label || 'Reportes'}</Text>
         {cacheInfo?.source === 'cache' && cacheInfo?.cachedAt ? (
-          <Text style={styles.metaText}>Offline cache: {new Date(cacheInfo.cachedAt).toLocaleString()}</Text>
+          <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Offline cache: {new Date(cacheInfo.cachedAt).toLocaleString()}</Text>
         ) : null}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
@@ -220,62 +223,62 @@ export default function ReportsScreen({
         {tab === 'sales' ? (
           <View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Ventas</Text>
-                <Text style={styles.kpiValue}>{sales?.summary?.total_sales || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Ventas</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{sales?.summary?.total_sales || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Bruto</Text>
-                <Text style={styles.kpiValue}>{money(sales?.summary?.gross_total || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Bruto</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(sales?.summary?.gross_total || 0)}</Text>
               </View>
             </View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Devoluciones</Text>
-                <Text style={styles.kpiValue}>{money(sales?.summary?.returns_total || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Devoluciones</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(sales?.summary?.returns_total || 0)}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Neto</Text>
-                <Text style={styles.kpiValue}>{money(sales?.summary?.net_total || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Neto</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(sales?.summary?.net_total || 0)}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Ventas por Dia</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ventas por Dia</Text>
               {(sales?.by_day || []).slice(0, 20).map((row) => (
-                <View key={row.date} style={styles.lineRow}>
-                  <Text style={styles.lineLabel}>{row.date}</Text>
-                  <Text style={styles.lineValue}>{row.count} · {money(row.net_total || 0)}</Text>
+                <View key={row.date} style={[styles.lineRow, isLightTheme && styles.lineRowLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>{row.date}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>{row.count} · {money(row.net_total || 0)}</Text>
                 </View>
               ))}
               {(sales?.by_day || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Metodos de Pago</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Metodos de Pago</Text>
               {(sales?.by_payment_method || []).slice(0, 10).map((row) => (
-                <View key={row.method} style={styles.lineRow}>
-                  <Text style={styles.lineLabel}>{row.method}</Text>
-                  <Text style={styles.lineValue}>{money(row.total || 0)}</Text>
+                <View key={row.method} style={[styles.lineRow, isLightTheme && styles.lineRowLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>{row.method}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>{money(row.total || 0)}</Text>
                 </View>
               ))}
               {(sales?.by_payment_method || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Ventas por Vendedor</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ventas por Vendedor</Text>
               {(sales?.by_seller || []).slice(0, 12).map((row) => (
-                <View key={row.user_id || row.name} style={styles.lineRow}>
-                  <Text style={styles.lineLabel}>{row.name}</Text>
-                  <Text style={styles.lineValue}>{row.count} · {money(row.total || 0)}</Text>
+                <View key={row.user_id || row.name} style={[styles.lineRow, isLightTheme && styles.lineRowLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>{row.name}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>{row.count} · {money(row.total || 0)}</Text>
                 </View>
               ))}
               {(sales?.by_seller || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
           </View>
@@ -284,57 +287,57 @@ export default function ReportsScreen({
         {tab === 'cash' ? (
           <View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Sesiones</Text>
-                <Text style={styles.kpiValue}>{cash?.summary?.sessions_count || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Sesiones</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{cash?.summary?.sessions_count || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Abiertas</Text>
-                <Text style={styles.kpiValue}>{cash?.summary?.open_sessions || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Abiertas</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{cash?.summary?.open_sessions || 0}</Text>
               </View>
             </View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Transacciones</Text>
-                <Text style={styles.kpiValue}>{cash?.summary?.transactions_count || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Transacciones</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{cash?.summary?.transactions_count || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Con diferencia</Text>
-                <Text style={styles.kpiValue}>{cash?.summary?.sessions_with_difference || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Con diferencia</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{cash?.summary?.sessions_with_difference || 0}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Sesiones con Diferencia</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Sesiones con Diferencia</Text>
               {(cash?.sessions_with_difference || []).slice(0, 25).map((session) => (
-                <View key={session.cash_session_id} style={styles.lineBlock}>
-                  <Text style={styles.lineLabel}>
+                <View key={session.cash_session_id} style={[styles.lineBlock, isLightTheme && styles.lineBlockLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>
                     {session.cash_register?.name || 'Caja'} · {session.cash_register?.location?.name || '-'}
                   </Text>
-                  <Text style={styles.lineValue}>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>
                     Dif: {money(session.difference || 0)} · Ventas: {money(session.sales_total || 0)}
                   </Text>
                 </View>
               ))}
               {(cash?.sessions_with_difference || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin diferencias</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin diferencias</Text>
               ) : null}
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Sesiones Recientes</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Sesiones Recientes</Text>
               {(cash?.sessions || []).slice(0, 20).map((session) => (
-                <View key={session.cash_session_id} style={styles.lineBlock}>
-                  <Text style={styles.lineLabel}>
+                <View key={session.cash_session_id} style={[styles.lineBlock, isLightTheme && styles.lineBlockLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>
                     {session.cash_register?.name || 'Caja'} · {session.status}
                   </Text>
-                  <Text style={styles.lineValue}>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>
                     Ventas {session.sales_count || 0} · {money(session.sales_total || 0)}
                   </Text>
                 </View>
               ))}
               {(cash?.sessions || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
           </View>
@@ -343,51 +346,51 @@ export default function ReportsScreen({
         {tab === 'inventory' ? (
           <View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Registros</Text>
-                <Text style={styles.kpiValue}>{inventory?.summary?.rows || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Registros</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{inventory?.summary?.rows || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Stock Bajo</Text>
-                <Text style={styles.kpiValue}>{inventory?.summary?.low_stock || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Stock Bajo</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{inventory?.summary?.low_stock || 0}</Text>
               </View>
             </View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Sin Stock</Text>
-                <Text style={styles.kpiValue}>{inventory?.summary?.out_of_stock || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Sin Stock</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{inventory?.summary?.out_of_stock || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Valor Inventario</Text>
-                <Text style={styles.kpiValue}>{money(inventory?.summary?.inventory_value || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Valor Inventario</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(inventory?.summary?.inventory_value || 0)}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Productos con Stock Bajo</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Productos con Stock Bajo</Text>
               {(inventory?.low_stock_items || []).slice(0, 30).map((item, idx) => (
-                <View key={`${item.product_name}-${idx}`} style={styles.lineBlock}>
-                  <Text style={styles.lineLabel}>{item.product_name}</Text>
-                  <Text style={styles.lineValue}>
+                <View key={`${item.product_name}-${idx}`} style={[styles.lineBlock, isLightTheme && styles.lineBlockLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>{item.product_name}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>
                     Stock {item.on_hand} / Min {item.min_stock} · Costo {money(item.cost || 0)}
                   </Text>
                 </View>
               ))}
               {(inventory?.low_stock_items || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin alertas</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin alertas</Text>
               ) : null}
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Productos sin Stock</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Productos sin Stock</Text>
               {(inventory?.out_of_stock_items || []).slice(0, 20).map((item, idx) => (
-                <View key={`${item.product_name}-${idx}`} style={styles.lineRow}>
-                  <Text style={styles.lineLabel}>{item.product_name}</Text>
-                  <Text style={styles.lineValue}>0 / Min {item.min_stock}</Text>
+                <View key={`${item.product_name}-${idx}`} style={[styles.lineRow, isLightTheme && styles.lineRowLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>{item.product_name}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>0 / Min {item.min_stock}</Text>
                 </View>
               ))}
               {(inventory?.out_of_stock_items || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
           </View>
@@ -396,38 +399,38 @@ export default function ReportsScreen({
         {tab === 'financial' ? (
           <View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Ventas Netas</Text>
-                <Text style={styles.kpiValue}>{money(financial?.summary?.net_sales || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Ventas Netas</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(financial?.summary?.net_sales || 0)}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Costo Estimado</Text>
-                <Text style={styles.kpiValue}>{money(financial?.summary?.estimated_cost || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Costo Estimado</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(financial?.summary?.estimated_cost || 0)}</Text>
               </View>
             </View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Margen Bruto</Text>
-                <Text style={styles.kpiValue}>{money(financial?.summary?.gross_margin || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Margen Bruto</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(financial?.summary?.gross_margin || 0)}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Resultado Neto</Text>
-                <Text style={styles.kpiValue}>{money(financial?.summary?.net_result || 0)}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Resultado Neto</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{money(financial?.summary?.net_result || 0)}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Movimientos de Caja</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Movimientos de Caja</Text>
               {(financial?.cash_movements || []).slice(0, 30).map((move, idx) => (
-                <View key={`${move.created_at}-${idx}`} style={styles.lineRow}>
-                  <Text style={styles.lineLabel}>
+                <View key={`${move.created_at}-${idx}`} style={[styles.lineRow, isLightTheme && styles.lineRowLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>
                     {move.type === 'INCOME' ? 'Ingreso' : 'Gasto'} · {move.category || 'General'}
                   </Text>
-                  <Text style={styles.lineValue}>{money(move.amount || 0)}</Text>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>{money(move.amount || 0)}</Text>
                 </View>
               ))}
               {(financial?.cash_movements || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
           </View>
@@ -436,40 +439,40 @@ export default function ReportsScreen({
         {tab === 'production' ? (
           <View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Ordenes</Text>
-                <Text style={styles.kpiValue}>{production?.summary?.total_orders || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Ordenes</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{production?.summary?.total_orders || 0}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Completadas</Text>
-                <Text style={styles.kpiValue}>{production?.summary?.completed_orders || 0}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Completadas</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{production?.summary?.completed_orders || 0}</Text>
               </View>
             </View>
             <View style={styles.kpiRow}>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Cant. Planeada</Text>
-                <Text style={styles.kpiValue}>{Number(production?.summary?.planned_qty || 0).toLocaleString('es-CO')}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Cant. Planeada</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{Number(production?.summary?.planned_qty || 0).toLocaleString('es-CO')}</Text>
               </View>
-              <View style={styles.kpiCard}>
-                <Text style={styles.kpiLabel}>Cant. Producida</Text>
-                <Text style={styles.kpiValue}>{Number(production?.summary?.produced_qty || 0).toLocaleString('es-CO')}</Text>
+              <View style={[styles.kpiCard, isLightTheme && styles.kpiCardLight]}>
+                <Text style={[styles.kpiLabel, isLightTheme && styles.kpiLabelLight]}>Cant. Producida</Text>
+                <Text style={[styles.kpiValue, isLightTheme && styles.kpiValueLight]}>{Number(production?.summary?.produced_qty || 0).toLocaleString('es-CO')}</Text>
               </View>
             </View>
 
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Ordenes de Produccion</Text>
+            <View style={[styles.sectionCard, isLightTheme && styles.sectionCardLight]}>
+              <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ordenes de Produccion</Text>
               {(production?.orders || []).slice(0, 30).map((order) => (
-                <View key={order.production_order_id} style={styles.lineBlock}>
-                  <Text style={styles.lineLabel}>
+                <View key={order.production_order_id} style={[styles.lineBlock, isLightTheme && styles.lineBlockLight]}>
+                  <Text style={[styles.lineLabel, isLightTheme && styles.lineLabelLight]}>
                     {order.product_name || 'Producto'} {order.variant_name ? `· ${order.variant_name}` : ''}
                   </Text>
-                  <Text style={styles.lineValue}>
+                  <Text style={[styles.lineValue, isLightTheme && styles.lineValueLight]}>
                     {order.status} · {order.quantity_produced}/{order.quantity_planned}
                   </Text>
                 </View>
               ))}
               {(production?.orders || []).length === 0 ? (
-                <Text style={styles.emptyText}>Sin datos</Text>
+                <Text style={[styles.emptyText, isLightTheme && styles.emptyTextLight]}>Sin datos</Text>
               ) : null}
             </View>
           </View>
@@ -481,6 +484,7 @@ export default function ReportsScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   heroCard: {
     backgroundColor: '#0f172a',
     borderColor: '#1e293b',
@@ -489,9 +493,15 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  heroCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   heroTitle: { color: '#f8fafc', fontWeight: '800', fontSize: 18 },
+  heroTitleLight: { color: '#0f172a' },
   heroSub: { color: '#94a3b8', marginTop: 3, fontSize: 12 },
+  heroSubLight: { color: '#475569' },
   sourcePill: {
     borderWidth: 1,
     borderRadius: 999,
@@ -511,8 +521,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
   },
+  tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   tabBtnActive: { borderColor: '#38bdf8', backgroundColor: '#0a2842' },
   tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabTextLight: { color: '#334155' },
   tabTextActive: { color: '#bae6fd' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
@@ -524,11 +536,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
   metaWrap: { marginBottom: 8, paddingHorizontal: 2 },
   metaText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
+  metaTextLight: { color: '#475569' },
   errorText: { color: '#fca5a5', marginTop: 4, fontSize: 12 },
   kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   kpiCard: {
@@ -540,8 +555,11 @@ const styles = StyleSheet.create({
     padding: 12,
     elevation: 1,
   },
+  kpiCardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   kpiLabel: { color: '#cbd5e1', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
+  kpiLabelLight: { color: '#475569' },
   kpiValue: { color: '#f8fafc', fontSize: 18, fontWeight: '800', marginTop: 3 },
+  kpiValueLight: { color: '#0f172a' },
   sectionCard: {
     backgroundColor: '#0f172a',
     borderColor: '#1e293b',
@@ -550,7 +568,9 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
+  sectionCardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   sectionTitle: { color: '#e2e8f0', fontWeight: '800', marginBottom: 8, fontSize: 14 },
+  sectionTitleLight: { color: '#0f172a' },
   lineRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -563,6 +583,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     backgroundColor: '#0b1220',
   },
+  lineRowLight: { borderColor: '#dbe4ef', backgroundColor: '#f8fafc' },
   lineBlock: {
     marginTop: 6,
     borderWidth: 1,
@@ -572,7 +593,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: '#0b1220',
   },
+  lineBlockLight: { borderColor: '#dbe4ef', backgroundColor: '#f8fafc' },
   lineLabel: { color: '#cbd5e1', fontSize: 12, flex: 1 },
+  lineLabelLight: { color: '#334155' },
   lineValue: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
+  lineValueLight: { color: '#0f172a' },
   emptyText: { color: '#94a3b8', fontSize: 12, marginTop: 6, textAlign: 'center' },
+  emptyTextLight: { color: '#64748b' },
 });

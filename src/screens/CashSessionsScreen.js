@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   closeCashSession,
   createCashMovement,
@@ -21,6 +22,8 @@ export default function CashSessionsScreen({
   pageSize = 20,
   formatMoney,
 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [registers, setRegisters] = useState([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [closeDialog, setCloseDialog] = useState(false);
@@ -223,7 +226,7 @@ export default function CashSessionsScreen({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <View style={styles.chipsRow}>
           {STATUS_FILTERS.map((status) => {
@@ -231,10 +234,22 @@ export default function CashSessionsScreen({
             return (
               <Pressable
                 key={status || 'all'}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isLightTheme && styles.filterChipLight,
+                  active && styles.filterChipActive,
+                  active && isLightTheme && styles.filterChipActiveLight,
+                ]}
                 onPress={() => updateFilters({ status })}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isLightTheme && styles.filterChipTextLight,
+                    active && styles.filterChipTextActive,
+                    active && isLightTheme && styles.filterChipTextActiveLight,
+                  ]}
+                >
                   {status || 'Todas'}
                 </Text>
               </Pressable>
@@ -244,6 +259,7 @@ export default function CashSessionsScreen({
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Sesiones de Caja"
         loading={loading}
         error={error}
@@ -259,33 +275,33 @@ export default function CashSessionsScreen({
             : null
         }
         renderItem={(item) => (
-          <View key={item.cash_session_id} style={styles.card}>
-            <Text style={styles.title}>{item.cash_register?.name || 'Caja'} · {item.cash_register?.location?.name || ''}</Text>
-            <Text style={styles.meta}>Abierta: {new Date(item.opened_at).toLocaleString()} · {item.opened_by_user?.full_name || '-'}</Text>
+          <View key={item.cash_session_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.cash_register?.name || 'Caja'} · {item.cash_register?.location?.name || ''}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>Abierta: {new Date(item.opened_at).toLocaleString()} · {item.opened_by_user?.full_name || '-'}</Text>
             <View style={styles.badgesRow}>
-              <View style={[styles.badge, { borderColor: item.status === 'OPEN' ? '#16a34a' : '#64748b' }]}>
-                <Text style={styles.badgeText}>{item.status}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: item.status === 'OPEN' ? '#16a34a' : '#64748b' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.status}</Text>
               </View>
-              <View style={[styles.badge, { borderColor: '#0ea5e9' }]}>
-                <Text style={styles.badgeText}>Apertura {money(item.opening_amount || 0)}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Apertura {money(item.opening_amount || 0)}</Text>
               </View>
               {item.status === 'CLOSED' ? (
-                <View style={[styles.badge, { borderColor: Number(item.difference || 0) >= 0 ? '#16a34a' : '#ef4444' }]}>
-                  <Text style={styles.badgeText}>Dif {money(item.difference || 0)}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: Number(item.difference || 0) >= 0 ? '#16a34a' : '#ef4444' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Dif {money(item.difference || 0)}</Text>
                 </View>
               ) : null}
             </View>
             <View style={styles.actions}>
-              <Pressable style={styles.secondaryBtn} onPress={() => openDetailModal(item)}>
-                <Text style={styles.secondaryBtnText}>Detalle</Text>
+              <Pressable style={[styles.secondaryBtn, isLightTheme && styles.secondaryBtnLight]} onPress={() => openDetailModal(item)}>
+                <Text style={[styles.secondaryBtnText, isLightTheme && styles.secondaryBtnTextLight]}>Detalle</Text>
               </Pressable>
               {item.status === 'OPEN' ? (
                 <>
-                  <Pressable style={styles.secondaryBtn} onPress={() => openMovementModal(item)}>
-                    <Text style={styles.secondaryBtnText}>Movimiento</Text>
+                  <Pressable style={[styles.secondaryBtn, isLightTheme && styles.secondaryBtnLight]} onPress={() => openMovementModal(item)}>
+                    <Text style={[styles.secondaryBtnText, isLightTheme && styles.secondaryBtnTextLight]}>Movimiento</Text>
                   </Pressable>
-                  <Pressable style={styles.dangerBtn} onPress={() => openCloseModal(item)}>
-                    <Text style={styles.dangerBtnText}>Cerrar</Text>
+                  <Pressable style={[styles.dangerBtn, isLightTheme && styles.dangerBtnLight]} onPress={() => openCloseModal(item)}>
+                    <Text style={[styles.dangerBtnText, isLightTheme && styles.dangerBtnTextLight]}>Cerrar</Text>
                   </Pressable>
                 </>
               ) : null}
@@ -294,25 +310,30 @@ export default function CashSessionsScreen({
         )}
       />
 
-      <Pressable style={styles.fab} onPress={openSessionModal}>
-        <Text style={styles.fabText}>+ Abrir Caja</Text>
+      <Pressable style={[styles.fab, isLightTheme && styles.fabLight]} onPress={openSessionModal}>
+        <Text style={[styles.fabText, isLightTheme && styles.fabTextLight]}>+ Abrir Caja</Text>
       </Pressable>
 
       <Modal visible={openDialog} transparent animationType="slide" onRequestClose={() => setOpenDialog(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             <ScrollView>
-              <Text style={styles.modalTitle}>Abrir sesion de caja</Text>
-              <Text style={styles.groupTitle}>Caja registradora</Text>
+              <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Abrir sesion de caja</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Caja registradora</Text>
               {registers.map((r) => {
                 const active = openData.cash_register_id === r.cash_register_id;
                 return (
                   <Pressable
                     key={r.cash_register_id}
-                    style={[styles.option, active && styles.optionActive]}
+                    style={[
+                      styles.option,
+                      isLightTheme && styles.optionLight,
+                      active && styles.optionActive,
+                      active && isLightTheme && styles.optionActiveLight,
+                    ]}
                     onPress={() => setOpenData((prev) => ({ ...prev, cash_register_id: r.cash_register_id }))}
                   >
-                    <Text style={[styles.optionText, active && styles.optionTextActive]}>
+                    <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive, active && isLightTheme && styles.optionTextActiveLight]}>
                       {r.name} ({r.location?.name || 'Sin sede'})
                     </Text>
                   </Pressable>
@@ -320,7 +341,7 @@ export default function CashSessionsScreen({
               })}
 
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={openData.opening_amount}
                 onChangeText={(v) => setOpenData((prev) => ({ ...prev, opening_amount: v }))}
                 placeholder="Monto de apertura"
@@ -328,73 +349,73 @@ export default function CashSessionsScreen({
                 keyboardType="numeric"
               />
 
-              <Pressable style={styles.primaryBtn} onPress={saveOpenSession} disabled={saving}>
-                <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Abrir Caja'}</Text>
+              <Pressable style={[styles.primaryBtn, isLightTheme && styles.primaryBtnLight]} onPress={saveOpenSession} disabled={saving}>
+                <Text style={[styles.primaryBtnText, isLightTheme && styles.primaryBtnTextLight]}>{saving ? 'Guardando...' : 'Abrir Caja'}</Text>
               </Pressable>
             </ScrollView>
-            <Pressable onPress={() => setOpenDialog(false)} style={styles.closeBtn}><Text style={styles.closeBtnText}>Cerrar</Text></Pressable>
+            <Pressable onPress={() => setOpenDialog(false)} style={[styles.closeBtn, isLightTheme && styles.closeBtnLight]}><Text style={[styles.closeBtnText, isLightTheme && styles.closeBtnTextLight]}>Cerrar</Text></Pressable>
           </View>
         </View>
       </Modal>
 
       <Modal visible={closeDialog} transparent animationType="slide" onRequestClose={() => setCloseDialog(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
-            <Text style={styles.modalTitle}>Cerrar sesion</Text>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
+            <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Cerrar sesion</Text>
             {closeSummary ? (
               <ScrollView>
-                <View style={styles.infoCard}>
-                  <Text style={styles.summaryLine}>Caja: {selectedSession?.cash_register?.name || '-'}</Text>
-                  <Text style={styles.summaryLine}>Abierta: {selectedSession?.opened_at ? new Date(selectedSession.opened_at).toLocaleString() : '-'}</Text>
-                  <Text style={styles.summaryLine}>Por: {selectedSession?.opened_by_user?.full_name || '-'}</Text>
+                <View style={[styles.infoCard, isLightTheme && styles.infoCardLight]}>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Caja: {selectedSession?.cash_register?.name || '-'}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Abierta: {selectedSession?.opened_at ? new Date(selectedSession.opened_at).toLocaleString() : '-'}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Por: {selectedSession?.opened_by_user?.full_name || '-'}</Text>
                 </View>
 
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryTitle}>Resumen de Ventas</Text>
-                  <Text style={styles.summaryLine}>Total ventas: {closeSummary.sales_count}</Text>
-                  <Text style={styles.summaryLine}>Ingresos ventas: {money(closeSummary.sales_total || 0)}</Text>
+                <View style={[styles.summaryCard, isLightTheme && styles.summaryCardLight]}>
+                  <Text style={[styles.summaryTitle, isLightTheme && styles.summaryTitleLight]}>Resumen de Ventas</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Total ventas: {closeSummary.sales_count}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Ingresos ventas: {money(closeSummary.sales_total || 0)}</Text>
                 </View>
                 {Number(closeSummary.layaway_count || 0) > 0 ? (
-                  <View style={styles.summaryCard}>
-                    <Text style={styles.summaryTitle}>Abonos Plan Separe</Text>
-                    <Text style={styles.summaryLine}>Total abonos: {closeSummary.layaway_count}</Text>
-                    <Text style={styles.summaryLine}>Ingresos abonos: {money(closeSummary.layaway_total || 0)}</Text>
+                  <View style={[styles.summaryCard, isLightTheme && styles.summaryCardLight]}>
+                    <Text style={[styles.summaryTitle, isLightTheme && styles.summaryTitleLight]}>Abonos Plan Separe</Text>
+                    <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Total abonos: {closeSummary.layaway_count}</Text>
+                    <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Ingresos abonos: {money(closeSummary.layaway_total || 0)}</Text>
                   </View>
                 ) : null}
 
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryTitle}>Pagos por Metodo</Text>
+                <View style={[styles.summaryCard, isLightTheme && styles.summaryCardLight]}>
+                  <Text style={[styles.summaryTitle, isLightTheme && styles.summaryTitleLight]}>Pagos por Metodo</Text>
                   {(closeSummary.payments_by_method || []).length === 0 ? (
-                    <Text style={styles.summaryLine}>Sin pagos</Text>
+                    <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Sin pagos</Text>
                   ) : (
                     (closeSummary.payments_by_method || []).map((pm) => (
-                      <Text key={pm.code} style={styles.summaryLine}>
+                      <Text key={pm.code} style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>
                         {pm.name}: {money(pm.total || 0)}
                       </Text>
                     ))
                   )}
                 </View>
 
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryTitle}>Movimientos de Caja</Text>
-                  <Text style={styles.summaryLine}>Ingresos: {money(closeSummary.income_total || 0)}</Text>
-                  <Text style={styles.summaryLine}>Gastos: {money(closeSummary.expense_total || 0)}</Text>
+                <View style={[styles.summaryCard, isLightTheme && styles.summaryCardLight]}>
+                  <Text style={[styles.summaryTitle, isLightTheme && styles.summaryTitleLight]}>Movimientos de Caja</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Ingresos: {money(closeSummary.income_total || 0)}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Gastos: {money(closeSummary.expense_total || 0)}</Text>
                 </View>
 
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryTitle}>Arqueo</Text>
-                  <Text style={styles.summaryLine}>Apertura: {money(selectedSession?.opening_amount || 0)}</Text>
-                  <Text style={styles.summaryLine}>Ventas efectivo: {money((closeSummary.cash_sales || 0) - (closeSummary.layaway_cash || 0))}</Text>
+                <View style={[styles.summaryCard, isLightTheme && styles.summaryCardLight]}>
+                  <Text style={[styles.summaryTitle, isLightTheme && styles.summaryTitleLight]}>Arqueo</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Apertura: {money(selectedSession?.opening_amount || 0)}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Ventas efectivo: {money((closeSummary.cash_sales || 0) - (closeSummary.layaway_cash || 0))}</Text>
                   {Number(closeSummary.layaway_cash || 0) > 0 ? (
-                    <Text style={styles.summaryLine}>Abonos separe (efectivo): {money(closeSummary.layaway_cash || 0)}</Text>
+                    <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Abonos separe (efectivo): {money(closeSummary.layaway_cash || 0)}</Text>
                   ) : null}
-                  <Text style={styles.summaryLine}>Otros ingresos: {money(closeSummary.income_total || 0)}</Text>
-                  <Text style={styles.summaryLine}>Gastos: -{money(closeSummary.expense_total || 0)}</Text>
-                  <Text style={styles.summaryLine}>Efectivo esperado: {money(closeSummary.expected_cash || 0)}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Otros ingresos: {money(closeSummary.income_total || 0)}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Gastos: -{money(closeSummary.expense_total || 0)}</Text>
+                  <Text style={[styles.summaryLine, isLightTheme && styles.summaryLineLight]}>Efectivo esperado: {money(closeSummary.expected_cash || 0)}</Text>
                 </View>
 
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, isLightTheme && styles.inputLight]}
                   value={closeData.counted}
                   onChangeText={(v) => setCloseData({ counted: v })}
                   placeholder="Efectivo contado"
@@ -413,46 +434,56 @@ export default function CashSessionsScreen({
                 >
                   Diferencia: {money(closeDifference)}
                 </Text>
-                <Text style={styles.meta}>{closeDifferenceStatus}</Text>
+                <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{closeDifferenceStatus}</Text>
               </ScrollView>
             ) : (
-              <Text style={styles.meta}>Cargando resumen...</Text>
+              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>Cargando resumen...</Text>
             )}
-            <Pressable style={styles.primaryBtn} onPress={saveCloseSession} disabled={closing}>
-              <Text style={styles.primaryBtnText}>{closing ? 'Cerrando...' : 'Confirmar Cierre'}</Text>
+            <Pressable style={[styles.primaryBtn, isLightTheme && styles.primaryBtnLight]} onPress={saveCloseSession} disabled={closing}>
+              <Text style={[styles.primaryBtnText, isLightTheme && styles.primaryBtnTextLight]}>{closing ? 'Cerrando...' : 'Confirmar Cierre'}</Text>
             </Pressable>
-            <Pressable onPress={() => setCloseDialog(false)} style={styles.closeBtn}><Text style={styles.closeBtnText}>Cancelar</Text></Pressable>
+            <Pressable onPress={() => setCloseDialog(false)} style={[styles.closeBtn, isLightTheme && styles.closeBtnLight]}><Text style={[styles.closeBtnText, isLightTheme && styles.closeBtnTextLight]}>Cancelar</Text></Pressable>
           </View>
         </View>
       </Modal>
 
       <Modal visible={movementDialog} transparent animationType="slide" onRequestClose={() => setMovementDialog(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
-            <Text style={styles.modalTitle}>Movimiento de caja</Text>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
+            <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Movimiento de caja</Text>
             <View style={styles.actions}>
               <Pressable
-                style={[styles.secondaryBtn, movementData.type === 'INCOME' && styles.optionActive]}
+                style={[
+                  styles.secondaryBtn,
+                  isLightTheme && styles.secondaryBtnLight,
+                  movementData.type === 'INCOME' && styles.optionActive,
+                  movementData.type === 'INCOME' && isLightTheme && styles.optionActiveLight,
+                ]}
                 onPress={() => setMovementData((prev) => ({ ...prev, type: 'INCOME' }))}
               >
-                <Text style={styles.secondaryBtnText}>Ingreso</Text>
+                <Text style={[styles.secondaryBtnText, isLightTheme && styles.secondaryBtnTextLight]}>Ingreso</Text>
               </Pressable>
               <Pressable
-                style={[styles.secondaryBtn, movementData.type === 'EXPENSE' && styles.optionActive]}
+                style={[
+                  styles.secondaryBtn,
+                  isLightTheme && styles.secondaryBtnLight,
+                  movementData.type === 'EXPENSE' && styles.optionActive,
+                  movementData.type === 'EXPENSE' && isLightTheme && styles.optionActiveLight,
+                ]}
                 onPress={() => setMovementData((prev) => ({ ...prev, type: 'EXPENSE' }))}
               >
-                <Text style={styles.secondaryBtnText}>Gasto</Text>
+                <Text style={[styles.secondaryBtnText, isLightTheme && styles.secondaryBtnTextLight]}>Gasto</Text>
               </Pressable>
             </View>
             <TextInput
-              style={styles.input}
+              style={[styles.input, isLightTheme && styles.inputLight]}
               value={movementData.category}
               onChangeText={(v) => setMovementData((prev) => ({ ...prev, category: v }))}
               placeholder="Categoria"
               placeholderTextColor="#64748b"
             />
             <TextInput
-              style={styles.input}
+              style={[styles.input, isLightTheme && styles.inputLight]}
               value={movementData.amount}
               onChangeText={(v) => setMovementData((prev) => ({ ...prev, amount: v }))}
               placeholder="Monto"
@@ -460,37 +491,37 @@ export default function CashSessionsScreen({
               keyboardType="numeric"
             />
             <TextInput
-              style={[styles.input, { minHeight: 70 }]}
+              style={[styles.input, isLightTheme && styles.inputLight, { minHeight: 70 }]}
               value={movementData.note}
               onChangeText={(v) => setMovementData((prev) => ({ ...prev, note: v }))}
               placeholder="Nota"
               placeholderTextColor="#64748b"
               multiline
             />
-            <Pressable style={styles.primaryBtn} onPress={saveMovement} disabled={savingMovement}>
-              <Text style={styles.primaryBtnText}>{savingMovement ? 'Guardando...' : 'Guardar movimiento'}</Text>
+            <Pressable style={[styles.primaryBtn, isLightTheme && styles.primaryBtnLight]} onPress={saveMovement} disabled={savingMovement}>
+              <Text style={[styles.primaryBtnText, isLightTheme && styles.primaryBtnTextLight]}>{savingMovement ? 'Guardando...' : 'Guardar movimiento'}</Text>
             </Pressable>
-            <Pressable onPress={() => setMovementDialog(false)} style={styles.closeBtn}><Text style={styles.closeBtnText}>Cancelar</Text></Pressable>
+            <Pressable onPress={() => setMovementDialog(false)} style={[styles.closeBtn, isLightTheme && styles.closeBtnLight]}><Text style={[styles.closeBtnText, isLightTheme && styles.closeBtnTextLight]}>Cancelar</Text></Pressable>
           </View>
         </View>
       </Modal>
 
       <Modal visible={detailDialog} transparent animationType="slide" onRequestClose={() => setDetailDialog(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
-            <Text style={styles.modalTitle}>Movimientos de sesion</Text>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
+            <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Movimientos de sesion</Text>
             <ScrollView>
-              {movementRows.length === 0 ? <Text style={styles.meta}>Sin movimientos</Text> : null}
+              {movementRows.length === 0 ? <Text style={[styles.meta, isLightTheme && styles.metaLight]}>Sin movimientos</Text> : null}
               {movementRows.map((m) => (
-                <View key={m.cash_movement_id} style={styles.card}>
-                  <Text style={styles.title}>{m.type === 'INCOME' ? 'Ingreso' : 'Gasto'} · {money(m.amount || 0)}</Text>
-                  <Text style={styles.meta}>{m.category || 'Sin categoria'}</Text>
-                  <Text style={styles.meta}>{new Date(m.created_at).toLocaleString()}</Text>
-                  {m.note ? <Text style={styles.meta}>{m.note}</Text> : null}
+                <View key={m.cash_movement_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+                  <Text style={[styles.title, isLightTheme && styles.titleLight]}>{m.type === 'INCOME' ? 'Ingreso' : 'Gasto'} · {money(m.amount || 0)}</Text>
+                  <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{m.category || 'Sin categoria'}</Text>
+                  <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{new Date(m.created_at).toLocaleString()}</Text>
+                  {m.note ? <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{m.note}</Text> : null}
                 </View>
               ))}
             </ScrollView>
-            <Pressable onPress={() => setDetailDialog(false)} style={styles.closeBtn}><Text style={styles.closeBtnText}>Cerrar</Text></Pressable>
+            <Pressable onPress={() => setDetailDialog(false)} style={[styles.closeBtn, isLightTheme && styles.closeBtnLight]}><Text style={[styles.closeBtnText, isLightTheme && styles.closeBtnTextLight]}>Cerrar</Text></Pressable>
           </View>
         </View>
       </Modal>
@@ -500,6 +531,7 @@ export default function CashSessionsScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -511,8 +543,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActiveLight: { color: '#0369a1' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -521,8 +557,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -531,12 +570,18 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#0f172a',
   },
+  badgeLight: { backgroundColor: '#f8fafc' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  badgeTextLight: { color: '#334155' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   secondaryBtn: { backgroundColor: '#1e40af', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   secondaryBtnText: { color: '#dbeafe', fontWeight: '700' },
+  secondaryBtnLight: { backgroundColor: '#1d4ed8' },
+  secondaryBtnTextLight: { color: '#eff6ff' },
   dangerBtn: { backgroundColor: '#7f1d1d', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
+  dangerBtnLight: { backgroundColor: '#dc2626' },
+  dangerBtnTextLight: { color: '#fff1f2' },
   fab: {
     position: 'absolute',
     right: 16,
@@ -547,6 +592,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   fabText: { color: '#451a03', fontWeight: '800' },
+  fabLight: { backgroundColor: '#facc15' },
+  fabTextLight: { color: '#422006' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '88%',
@@ -555,8 +602,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#ffffff', borderTopWidth: 1, borderColor: '#dbe4ef' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: { color: '#93c5fd', marginTop: 10, marginBottom: 4, fontWeight: '700', fontSize: 13, textTransform: 'uppercase' },
+  groupTitleLight: { color: '#0369a1' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -567,6 +617,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   option: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -577,10 +628,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   optionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  optionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  optionActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   optionText: { color: '#cbd5e1', fontWeight: '600' },
+  optionTextLight: { color: '#334155' },
   optionTextActive: { color: '#bae6fd' },
+  optionTextActiveLight: { color: '#0369a1' },
   primaryBtn: { marginTop: 14, backgroundColor: '#d97706', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
   primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  primaryBtnLight: { backgroundColor: '#1d4ed8' },
+  primaryBtnTextLight: { color: '#eff6ff' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
@@ -590,6 +647,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   closeBtnText: { color: '#fff', fontWeight: '700' },
+  closeBtnLight: { backgroundColor: '#e2e8f0' },
+  closeBtnTextLight: { color: '#1e293b' },
   summaryCard: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -598,8 +657,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 8,
   },
+  summaryCardLight: { borderColor: '#dbe4ef', backgroundColor: '#f8fafc' },
   summaryTitle: { color: '#bae6fd', fontWeight: '700', marginBottom: 4, fontSize: 13 },
+  summaryTitleLight: { color: '#0369a1' },
   summaryLine: { color: '#e2e8f0', fontSize: 12, marginTop: 2 },
+  summaryLineLight: { color: '#334155' },
   differenceText: { fontSize: 14, fontWeight: '700', marginTop: 10 },
   infoCard: {
     borderWidth: 1,
@@ -609,4 +671,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b2942',
     marginTop: 8,
   },
+  infoCardLight: { borderColor: '#93c5fd', backgroundColor: '#e0f2fe' },
 });

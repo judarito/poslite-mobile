@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   createCategory,
   listAllCategories,
@@ -17,6 +18,8 @@ const EMPTY_FORM = {
 };
 
 export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -136,10 +139,10 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
   const parentName = (item) => item.parent?.name || 'Categoria principal';
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.toolbar}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isLightTheme && styles.searchInputLight]}
           value={search}
           onChangeText={setSearch}
           placeholder="Buscar categoria"
@@ -152,6 +155,7 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
       </View>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Categorias"
         loading={loading}
         error={error}
@@ -167,9 +171,9 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
             : null
         }
         renderItem={(item) => (
-          <View key={item.category_id} style={styles.card}>
-            <Text style={styles.title}>{item.name}</Text>
-            <Text style={styles.meta}>{parentName(item)}</Text>
+          <View key={item.category_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.name}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{parentName(item)}</Text>
             <View style={styles.actions}>
               <Pressable style={styles.secondaryBtn} onPress={() => openEdit(item)}>
                 <Text style={styles.secondaryBtnText}>Editar</Text>
@@ -188,22 +192,23 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
 
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             <ScrollView>
-              <Text style={styles.modalTitle}>{form.category_id ? 'Editar categoria' : 'Nueva categoria'}</Text>
+              <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>{form.category_id ? 'Editar categoria' : 'Nueva categoria'}</Text>
 
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.name}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, name: v }))}
                 placeholder="Nombre *"
                 placeholderTextColor="#64748b"
               />
 
-              <Text style={styles.groupTitle}>Categoria padre</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Categoria padre</Text>
               <Pressable
                 style={[
                   styles.parentOption,
+                  isLightTheme && styles.parentOptionLight,
                   form.parent_category_id === null && styles.parentOptionActive,
                 ]}
                 onPress={() => setForm((prev) => ({ ...prev, parent_category_id: null }))}
@@ -211,6 +216,7 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
                 <Text
                   style={[
                     styles.parentOptionText,
+                    isLightTheme && styles.parentOptionTextLight,
                     form.parent_category_id === null && styles.parentOptionTextActive,
                   ]}
                 >
@@ -225,10 +231,10 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
                   return (
                     <Pressable
                       key={opt.category_id}
-                      style={[styles.parentOption, active && styles.parentOptionActive]}
+                      style={[styles.parentOption, isLightTheme && styles.parentOptionLight, active && styles.parentOptionActive]}
                       onPress={() => setForm((prev) => ({ ...prev, parent_category_id: opt.category_id }))}
                     >
-                      <Text style={[styles.parentOptionText, active && styles.parentOptionTextActive]}>
+                      <Text style={[styles.parentOptionText, isLightTheme && styles.parentOptionTextLight, active && styles.parentOptionTextActive]}>
                         {opt.name}
                       </Text>
                     </Pressable>
@@ -252,6 +258,7 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -262,6 +269,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     color: '#f8fafc',
     paddingHorizontal: 10,
+  },
+  searchInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
   },
   searchBtn: {
     backgroundColor: '#1e40af',
@@ -279,8 +291,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 3, fontSize: 13 },
+  metaLight: { color: '#475569' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,
@@ -316,7 +331,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#f8fafc' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: {
     color: '#93c5fd',
     marginTop: 12,
@@ -325,6 +342,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
+  groupTitleLight: { color: '#1d4ed8' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -335,6 +353,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   parentOption: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -344,8 +363,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 8,
   },
+  parentOptionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   parentOptionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   parentOptionText: { color: '#cbd5e1', fontWeight: '600' },
+  parentOptionTextLight: { color: '#334155' },
   parentOptionTextActive: { color: '#bae6fd' },
   primaryBtn: {
     marginTop: 14,

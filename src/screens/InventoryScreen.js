@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   listInventoryMoves,
   listLocations,
@@ -39,6 +40,8 @@ function getAlert(item) {
 }
 
 export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, formatMoney }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [locations, setLocations] = useState([]);
 
   const {
@@ -103,17 +106,31 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.tabRow}>
         {TABS.map((tab) => {
           const active = filters?.tab === tab.key;
           return (
             <Pressable
               key={tab.key}
-              style={[styles.tabBtn, active && styles.tabBtnActive]}
+              style={[
+                styles.tabBtn,
+                isLightTheme && styles.tabBtnLight,
+                active && styles.tabBtnActive,
+                active && isLightTheme && styles.tabBtnActiveLight,
+              ]}
               onPress={() => updateFilters({ tab: tab.key, move_type: '' })}
             >
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label}</Text>
+              <Text
+                style={[
+                  styles.tabText,
+                  isLightTheme && styles.tabTextLight,
+                  active && styles.tabTextActive,
+                  active && isLightTheme && styles.tabTextActiveLight,
+                ]}
+              >
+                {tab.label}
+              </Text>
             </Pressable>
           );
         })}
@@ -122,10 +139,22 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <View style={styles.chipsRow}>
           <Pressable
-            style={[styles.filterChip, !filters?.location_id && styles.filterChipActive]}
+            style={[
+              styles.filterChip,
+              isLightTheme && styles.filterChipLight,
+              !filters?.location_id && styles.filterChipActive,
+              !filters?.location_id && isLightTheme && styles.filterChipActiveLight,
+            ]}
             onPress={() => updateFilters({ location_id: '' })}
           >
-            <Text style={[styles.filterChipText, !filters?.location_id && styles.filterChipTextActive]}>
+            <Text
+              style={[
+                styles.filterChipText,
+                isLightTheme && styles.filterChipTextLight,
+                !filters?.location_id && styles.filterChipTextActive,
+                !filters?.location_id && isLightTheme && styles.filterChipTextActiveLight,
+              ]}
+            >
               Todas las sedes
             </Text>
           </Pressable>
@@ -134,10 +163,24 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
             return (
               <Pressable
                 key={loc.location_id}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isLightTheme && styles.filterChipLight,
+                  active && styles.filterChipActive,
+                  active && isLightTheme && styles.filterChipActiveLight,
+                ]}
                 onPress={() => updateFilters({ location_id: loc.location_id })}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{loc.name}</Text>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isLightTheme && styles.filterChipTextLight,
+                    active && styles.filterChipTextActive,
+                    active && isLightTheme && styles.filterChipTextActiveLight,
+                  ]}
+                >
+                  {loc.name}
+                </Text>
               </Pressable>
             );
           })}
@@ -152,10 +195,22 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
               return (
                 <Pressable
                   key={type || 'all'}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  style={[
+                    styles.filterChip,
+                    isLightTheme && styles.filterChipLight,
+                    active && styles.filterChipActive,
+                    active && isLightTheme && styles.filterChipActiveLight,
+                  ]}
                   onPress={() => updateFilters({ move_type: type })}
                 >
-                  <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      isLightTheme && styles.filterChipTextLight,
+                      active && styles.filterChipTextActive,
+                      active && isLightTheme && styles.filterChipTextActiveLight,
+                    ]}
+                  >
                     {moveLabel(type)}
                   </Text>
                 </Pressable>
@@ -166,6 +221,7 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
       ) : null}
 
       <PaginatedList
+        themeMode={themeMode}
         title={
           filters?.tab === 'kardex'
             ? 'Kardex / Movimientos'
@@ -188,42 +244,42 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
         }
         renderItem={(item) =>
           filters?.tab === 'kardex' ? (
-            <View key={item.inventory_move_id} style={styles.card}>
-              <Text style={styles.title}>{item.variant?.product?.name || 'Producto'}</Text>
-              <Text style={styles.meta}>{item.variant?.sku || '-'} · {item.variant?.variant_name || '-'}</Text>
-              <Text style={styles.meta}>
+            <View key={item.inventory_move_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+              <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.variant?.product?.name || 'Producto'}</Text>
+              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.variant?.sku || '-'} · {item.variant?.variant_name || '-'}</Text>
+              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
                 {item.location?.name || 'Sin sede'} · {new Date(item.created_at).toLocaleString()}
               </Text>
               <View style={styles.badgesRow}>
-                <View style={[styles.badge, { borderColor: '#0ea5e9' }]}>
-                  <Text style={styles.badgeText}>{item.move_type}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.move_type}</Text>
                 </View>
-                <View style={[styles.badge, { borderColor: '#a78bfa' }]}>
-                  <Text style={styles.badgeText}>Cant. {Number(item.quantity || 0).toLocaleString('es-CO')}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Cant. {Number(item.quantity || 0).toLocaleString('es-CO')}</Text>
                 </View>
-                <View style={[styles.badge, { borderColor: '#f59e0b' }]}>
-                  <Text style={styles.badgeText}>Costo {money(item.unit_cost || 0)}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#f59e0b' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Costo {money(item.unit_cost || 0)}</Text>
                 </View>
               </View>
-              {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
+              {item.note ? <Text style={[styles.note, isLightTheme && styles.noteLight]}>{item.note}</Text> : null}
             </View>
           ) : (
-            <View key={`${item.location_id}-${item.variant_id}`} style={styles.card}>
-              <Text style={styles.title}>{item.variant?.product?.name || 'Producto'}</Text>
-              <Text style={styles.meta}>{item.variant?.sku || '-'} · {item.variant?.variant_name || '-'}</Text>
-              <Text style={styles.meta}>{item.location?.name || 'Sin sede'}</Text>
+            <View key={`${item.location_id}-${item.variant_id}`} style={[styles.card, isLightTheme && styles.cardLight]}>
+              <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.variant?.product?.name || 'Producto'}</Text>
+              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.variant?.sku || '-'} · {item.variant?.variant_name || '-'}</Text>
+              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.location?.name || 'Sin sede'}</Text>
               <View style={styles.badgesRow}>
-                <View style={[styles.badge, { borderColor: '#38bdf8' }]}>
-                  <Text style={styles.badgeText}>Stock {Number(item.on_hand || 0).toLocaleString('es-CO')}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#38bdf8' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Stock {Number(item.on_hand || 0).toLocaleString('es-CO')}</Text>
                 </View>
-                <View style={[styles.badge, { borderColor: '#a78bfa' }]}>
-                  <Text style={styles.badgeText}>Min {Number(item.variant?.min_stock || 0).toLocaleString('es-CO')}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Min {Number(item.variant?.min_stock || 0).toLocaleString('es-CO')}</Text>
                 </View>
-                <View style={[styles.badge, { borderColor: getAlert(item).color }]}>
-                  <Text style={styles.badgeText}>{getAlert(item).label}</Text>
+                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: getAlert(item).color }]}>
+                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{getAlert(item).label}</Text>
                 </View>
               </View>
-              <Text style={styles.note}>
+              <Text style={[styles.note, isLightTheme && styles.noteLight]}>
                 Costo {money(item.variant?.cost || 0)} · Valor {money(Number(item.on_hand || 0) * Number(item.variant?.cost || 0))}
               </Text>
             </View>
@@ -236,6 +292,7 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   tabBtn: {
     flex: 1,
@@ -247,8 +304,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  tabBtnActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabTextLight: { color: '#334155' },
   tabTextActive: { color: '#bae6fd' },
+  tabTextActiveLight: { color: '#0369a1' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -260,8 +321,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActiveLight: { color: '#0369a1' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -270,8 +335,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -280,6 +348,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#0f172a',
   },
+  badgeLight: { backgroundColor: '#f8fafc' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  badgeTextLight: { color: '#334155' },
   note: { color: '#94a3b8', marginTop: 8, fontSize: 12 },
+  noteLight: { color: '#64748b' },
 });

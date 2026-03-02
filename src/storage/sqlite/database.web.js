@@ -92,7 +92,11 @@ export async function getPendingOps(limit = 50) {
   const raw = await AsyncStorage.getItem(WEB_PENDING_OPS_KEY);
   const list = raw ? JSON.parse(raw) : [];
   return list
-    .filter((op) => op.status === 'PENDING' || op.status === 'FAILED')
+    .filter(
+      (op) =>
+        (op.status === 'PENDING' || op.status === 'FAILED') &&
+        !String(op.lastError || '').startsWith('NO_RETRY:'),
+    )
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .slice(0, limit);
 }
@@ -152,6 +156,65 @@ export async function resetStuckProcessingOps() {
     list.map((op) =>
       op.status === 'PROCESSING'
         ? { ...op, status: 'PENDING', updatedAt: new Date().toISOString() }
+        : op,
+    ),
+  );
+}
+
+export async function getPendingSaleOps(tenantId, limit = 200) {
+  const raw = await AsyncStorage.getItem(WEB_PENDING_OPS_KEY);
+  const list = raw ? JSON.parse(raw) : [];
+  return list
+    .filter(
+      (op) =>
+        op.opType === 'CREATE_SALE' &&
+        op.tenantId === tenantId &&
+        (op.status === 'PENDING' || op.status === 'FAILED'),
+    )
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, limit);
+}
+
+export async function getPendingSaleOpById(opId) {
+  const raw = await AsyncStorage.getItem(WEB_PENDING_OPS_KEY);
+  const list = raw ? JSON.parse(raw) : [];
+  const found = list.find(
+    (op) =>
+      op.opType === 'CREATE_SALE' &&
+      op.opId === opId &&
+      (op.status === 'PENDING' || op.status === 'FAILED'),
+  );
+  return found || null;
+}
+
+export async function retryPendingOp(opId) {
+  await updatePendingList((list) =>
+    list.map((op) =>
+      op.opId === opId
+        ? {
+            ...op,
+            status: 'PENDING',
+            lastError: null,
+            updatedAt: new Date().toISOString(),
+          }
+        : op,
+    ),
+  );
+}
+
+export async function discardPendingOp(opId) {
+  await updatePendingList((list) => list.filter((op) => op.opId !== opId));
+}
+
+export async function updatePendingOpPayload(opId, payload) {
+  await updatePendingList((list) =>
+    list.map((op) =>
+      op.opId === opId
+        ? {
+            ...op,
+            payload: payload || {},
+            updatedAt: new Date().toISOString(),
+          }
         : op,
     ),
   );

@@ -1,4 +1,17 @@
 import { supabase } from '../lib/supabase';
+import { getSimpleCache, saveSimpleCache } from './offlineCache.service';
+
+function activeRegistersCacheKey(tenantId) {
+  return `cash-active-registers:${tenantId}`;
+}
+
+function cashSessionsCacheKey(tenantId, status = '') {
+  return `cash-sessions:${tenantId}:${status || 'all'}`;
+}
+
+function cashMovementsCacheKey(tenantId, sessionId) {
+  return `cash-movements:${tenantId}:${sessionId}`;
+}
 
 // ---------- Lookups ----------
 export async function listLocations(tenantId) {
@@ -57,6 +70,7 @@ export async function listCashRegisters({ tenantId, search = '', limit = 20, off
 }
 
 export async function listActiveCashRegisters(tenantId) {
+  const cacheKey = activeRegistersCacheKey(tenantId);
   try {
     const { data, error } = await supabase
       .from('cash_registers')
@@ -66,8 +80,14 @@ export async function listActiveCashRegisters(tenantId) {
       .order('name', { ascending: true });
 
     if (error) throw error;
-    return { success: true, data: data || [] };
+    const rows = data || [];
+    await saveSimpleCache(cacheKey, rows);
+    return { success: true, data: rows };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return { success: true, data: cached.value, source: 'cache', warning: error.message };
+    }
     return { success: false, error: error.message, data: [] };
   }
 }
@@ -126,6 +146,7 @@ export async function listCashSessions({
   limit = 20,
   offset = 0,
 } = {}) {
+  const cacheKey = cashSessionsCacheKey(tenantId, status || '');
   try {
     let query = supabase
       .from('cash_sessions')
@@ -159,8 +180,25 @@ export async function listCashSessions({
 
     const { data, error, count } = await query;
     if (error) throw error;
-    return { success: true, data: data || [], total: Number(count || 0) };
+    const rows = data || [];
+    await saveSimpleCache(cacheKey, {
+      items: rows,
+      total: Number(count || 0),
+      limit: Number(limit || 20),
+      offset: Number(offset || 0),
+    });
+    return { success: true, data: rows, total: Number(count || 0) };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return {
+        success: true,
+        data: cached.value.items || [],
+        total: Number(cached.value.total || 0),
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, error: error.message, data: [], total: 0 };
   }
 }
@@ -340,6 +378,7 @@ export async function getCashSessionCloseSummary({ tenantId, sessionId }) {
 }
 
 export async function listCashMovements({ tenantId, sessionId, limit = 50, offset = 0 } = {}) {
+  const cacheKey = cashMovementsCacheKey(tenantId, sessionId);
   try {
     const { data, error, count } = await supabase
       .from('cash_movements')
@@ -352,8 +391,25 @@ export async function listCashMovements({ tenantId, sessionId, limit = 50, offse
       .range(offset, offset + limit - 1);
 
     if (error) throw error;
-    return { success: true, data: data || [], total: Number(count || 0) };
+    const rows = data || [];
+    await saveSimpleCache(cacheKey, {
+      items: rows,
+      total: Number(count || 0),
+      limit: Number(limit || 50),
+      offset: Number(offset || 0),
+    });
+    return { success: true, data: rows, total: Number(count || 0) };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return {
+        success: true,
+        data: cached.value.items || [],
+        total: Number(cached.value.total || 0),
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, error: error.message, data: [], total: 0 };
   }
 }

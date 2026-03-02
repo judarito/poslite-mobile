@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AppState,
+  Appearance,
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
@@ -15,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from './src/lib/supabase';
+import { ThemeModeProvider } from './src/lib/themeMode';
 import {
   clearAuthCache,
   clearMenuCache,
@@ -30,6 +33,16 @@ import { fetchUserMenus, isFreshCache } from './src/services/menu.service';
 import { getDashboardSummary } from './src/services/reports.service';
 import { syncPendingOperations } from './src/services/sync.service';
 import { getTenantSettings, setCachedTenantTheme } from './src/services/tenantSettings.service';
+import { savePageCache } from './src/services/offlineCache.service';
+import { listProducts } from './src/services/productsCatalog.service';
+import { getSales } from './src/services/sales.service';
+import { listCashSessions, listActiveCashRegisters } from './src/services/cashMenu.service';
+import {
+  getCurrentUserOpenSession,
+  getPaymentMethodsForDropdown,
+  warmCustomersCatalog,
+  warmPosCatalog,
+} from './src/services/pos.service';
 import BulkImportsScreen from './src/screens/BulkImportsScreen';
 import BOMsScreen from './src/screens/BOMsScreen';
 import BatchesScreen from './src/screens/BatchesScreen';
@@ -85,7 +98,9 @@ export default function App() {
   const [lastMenuAction, setLastMenuAction] = useState('');
   const [currentScreen, setCurrentScreen] = useState('Home');
   const [reportsInitialTab, setReportsInitialTab] = useState('sales');
+  const [themePreference, setThemePreference] = useState('dark');
   const [themeMode, setThemeMode] = useState('dark');
+  const [networkReachable, setNetworkReachable] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -156,6 +171,7 @@ export default function App() {
         setTenantSettings({});
         setCurrentScreen('Home');
         setReportsInitialTab('sales');
+        setThemePreference('dark');
         setThemeMode('dark');
         setOfflineMode(false);
         setMenuTree([]);
@@ -170,6 +186,63 @@ export default function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    let timer = null;
+
+    const checkConnectivity = async () => {
+      const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      if (!baseUrl) {
+        if (active) setNetworkReachable(true);
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+      try {
+        const response = await fetch(`${baseUrl}/rest/v1/`, {
+          method: 'GET',
+          headers: anonKey
+            ? {
+                apikey: anonKey,
+                Authorization: `Bearer ${anonKey}`,
+              }
+            : undefined,
+          signal: controller.signal,
+        });
+        if (active) {
+          setNetworkReachable(response.status < 500);
+        }
+      } catch (_e) {
+        if (active) setNetworkReachable(false);
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    checkConnectivity();
+    timer = setInterval(checkConnectivity, 10000);
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        checkConnectivity();
+      }
+    });
+
+    return () => {
+      active = false;
+      if (timer) clearInterval(timer);
+      appStateSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    const shouldBeOffline = !networkReachable;
+    setOfflineMode(shouldBeOffline);
+  }, [session, networkReachable]);
 
   const userEmail = useMemo(() => session?.user?.email ?? '', [session]);
   const rolesText = useMemo(() => {
@@ -200,10 +273,19 @@ export default function App() {
     }
   };
   const defaultPageSize = Number(tenantSettings?.default_page_size || 20);
-  const normalizeThemeMode = (value) => {
-    const raw = String(value || '').toLowerCase();
+  const normalizeThemePreference = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'auto' || raw === 'system') return 'auto';
     if (raw === 'light') return 'light';
     return 'dark';
+  };
+  const resolveThemeMode = (preference) => {
+    const normalized = normalizeThemePreference(preference);
+    if (normalized === 'auto') {
+      const scheme = Appearance.getColorScheme();
+      return scheme === 'light' ? 'light' : 'dark';
+    }
+    return normalized;
   };
 
   const loadMenusForUser = async (authUserId, { preferFreshCache = true } = {}) => {
@@ -293,21 +375,130 @@ export default function App() {
     if (result.success) {
       const nextSettings = result.data || {};
       setTenantSettings(nextSettings);
-      setThemeMode(normalizeThemeMode(nextSettings.theme));
+      const nextPreference = normalizeThemePreference(nextSettings.theme);
+      setThemePreference(nextPreference);
+      setThemeMode(resolveThemeMode(nextPreference));
       return;
     }
 
     setTenantSettings({});
   };
 
-  const handleLocalThemeChange = async (nextTheme) => {
-    const normalized = normalizeThemeMode(nextTheme);
-    setThemeMode(normalized);
-    setTenantSettings((prev) => ({ ...(prev || {}), theme: normalized }));
-    if (tenant?.tenant_id) {
-      await setCachedTenantTheme(tenant.tenant_id, normalized);
+  const warmCriticalOfflineCaches = async (tenantId, userId) => {
+    if (!tenantId || !userId) return;
+    try {
+      const [sessionResult] = await Promise.all([
+        getCurrentUserOpenSession(tenantId, userId, { offlineMode: false }),
+        getPaymentMethodsForDropdown(tenantId, { offlineMode: false }),
+        warmCustomersCatalog(tenantId),
+        listActiveCashRegisters(tenantId),
+      ]);
+
+      const locationId = sessionResult?.success
+        ? sessionResult?.data?.cash_register?.location_id || null
+        : null;
+
+      await Promise.all([
+        warmPosCatalog(tenantId, locationId),
+        warmPosCatalog(tenantId, null),
+      ]);
+
+      const [productsSale, productsComponents, cashSessions, salesHistory] = await Promise.all([
+        listProducts({
+          tenantId,
+          search: '',
+          limit: defaultPageSize,
+          offset: 0,
+          isComponent: false,
+        }),
+        listProducts({
+          tenantId,
+          search: '',
+          limit: defaultPageSize,
+          offset: 0,
+          isComponent: true,
+        }),
+        listCashSessions({
+          tenantId,
+          status: null,
+          limit: defaultPageSize,
+          offset: 0,
+        }),
+        getSales(tenantId, 1, defaultPageSize, {
+          status: null,
+          location_id: null,
+          from_date: null,
+          to_date: null,
+        }),
+      ]);
+
+      if (productsSale.success) {
+        await savePageCache({
+          namespace: 'catalog-products',
+          tenantId,
+          page: 1,
+          pageSize: defaultPageSize,
+          filters: { search: '', isComponent: false },
+          items: productsSale.data || [],
+          total: Number(productsSale.total || 0),
+        });
+      }
+      if (productsComponents.success) {
+        await savePageCache({
+          namespace: 'catalog-products',
+          tenantId,
+          page: 1,
+          pageSize: defaultPageSize,
+          filters: { search: '', isComponent: true },
+          items: productsComponents.data || [],
+          total: Number(productsComponents.total || 0),
+        });
+      }
+      if (cashSessions.success) {
+        await savePageCache({
+          namespace: 'cash-sessions',
+          tenantId,
+          page: 1,
+          pageSize: defaultPageSize,
+          filters: { status: '' },
+          items: cashSessions.data || [],
+          total: Number(cashSessions.total || 0),
+        });
+      }
+      if (salesHistory.success) {
+        await savePageCache({
+          namespace: 'sales-history',
+          tenantId,
+          page: 1,
+          pageSize: defaultPageSize,
+          filters: { status: '', location_id: '', from_date: '', to_date: '' },
+          items: salesHistory.data || [],
+          total: Number(salesHistory.total || 0),
+        });
+      }
+    } catch (_e) {
+      // warming is best-effort; app flow must continue
     }
   };
+
+  const handleLocalThemeChange = async (nextTheme) => {
+    const normalizedPreference = normalizeThemePreference(nextTheme);
+    setThemePreference(normalizedPreference);
+    setThemeMode(resolveThemeMode(normalizedPreference));
+    setTenantSettings((prev) => ({ ...(prev || {}), theme: normalizedPreference }));
+    if (tenant?.tenant_id) {
+      await setCachedTenantTheme(tenant.tenant_id, normalizedPreference);
+    }
+  };
+
+  useEffect(() => {
+    const sub = Appearance.addChangeListener(() => {
+      if (themePreference === 'auto') {
+        setThemeMode(resolveThemeMode('auto'));
+      }
+    });
+    return () => sub.remove();
+  }, [themePreference]);
 
   const toggleSection = (sectionCode) => {
     if (!sectionCode) return;
@@ -463,6 +654,7 @@ export default function App() {
       setUserProfile(enriched);
       setTenant(tenantData);
       setOfflineMode(false);
+      setThemePreference('dark');
       setThemeMode('dark');
 
       await saveAuthCache({
@@ -488,6 +680,7 @@ export default function App() {
       }
       await loadTenantConfig(tenantData?.tenant_id, { forceOffline: false });
       await loadDashboard(tenantData?.tenant_id);
+      await warmCriticalOfflineCaches(tenantData?.tenant_id, enriched?.user_id);
     } catch (e) {
       setUserProfile(null);
       setTenant(null);
@@ -536,6 +729,7 @@ export default function App() {
       await refreshPendingOpsCount();
       if (syncResult?.processed > 0) {
         await loadDashboard(tenant.tenant_id);
+        await warmCriticalOfflineCaches(tenant.tenant_id, userProfile.user_id);
       }
     };
 
@@ -548,10 +742,16 @@ export default function App() {
     };
   }, [offlineMode, session, userProfile?.user_id, tenant?.tenant_id]);
 
+  useEffect(() => {
+    if (!session || !networkReachable || !tenant?.tenant_id || !userProfile?.user_id) return;
+    warmCriticalOfflineCaches(tenant.tenant_id, userProfile.user_id);
+  }, [session, networkReachable, tenant?.tenant_id, userProfile?.user_id, defaultPageSize]);
+
   const handleLogout = async () => {
     setError('');
-    if (offlineMode) {
+    if (offlineMode && !session) {
       setOfflineMode(false);
+      setSession(null);
       setUserProfile(null);
       setTenant(null);
       setKpis(null);
@@ -561,6 +761,7 @@ export default function App() {
       setTenantSettings({});
       setCurrentScreen('Home');
       setReportsInitialTab('sales');
+      setThemePreference('dark');
       setThemeMode('dark');
       setMenuTree([]);
       setMenuCachedAt('');
@@ -570,12 +771,17 @@ export default function App() {
       return;
     }
 
-    const { error: signOutError } = await supabase.auth.signOut();
-    if (signOutError) {
-      setError(signOutError.message);
-      return;
+    if (offlineMode && session) {
+      await supabase.auth.signOut({ scope: 'local' });
+    } else {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        setError(signOutError.message);
+        return;
+      }
     }
 
+    setSession(null);
     setUserProfile(null);
     setTenant(null);
     setKpis(null);
@@ -584,6 +790,7 @@ export default function App() {
     setPaymentMethodsSeries([]);
     setCurrentScreen('Home');
     setReportsInitialTab('sales');
+    setThemePreference('dark');
     setThemeMode('dark');
     setMenuTree([]);
     setMenuCachedAt('');
@@ -633,6 +840,7 @@ export default function App() {
     setMenuCachedAt('');
     setCurrentScreen('Home');
     setReportsInitialTab('sales');
+    setThemePreference('dark');
     setThemeMode('dark');
     setExpandedSections({});
     setMenuOpen(false);
@@ -641,75 +849,79 @@ export default function App() {
 
   if (loadingBoot || loadingProfile) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Inicializando app offline-first...</Text>
-        <StatusBar style="auto" />
-      </SafeAreaView>
+      <ThemeModeProvider mode={themeMode}>
+        <SafeAreaView style={styles.centered}>
+          <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={styles.loadingText}>Inicializando app offline-first...</Text>
+          <StatusBar style="auto" />
+        </SafeAreaView>
+      </ThemeModeProvider>
     );
   }
 
   if (!session && !offlineMode) {
     return (
-      <SafeAreaView style={styles.root}>
-        <KeyboardAvoidingView
-          style={styles.loginWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Text style={styles.title}>POSLite Mobile</Text>
-          <Text style={styles.subtitle}>Inicia sesion para continuar</Text>
-
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            placeholder="Correo"
-            placeholderTextColor="#64748b"
-            style={styles.input}
-          />
-
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="Contrasena"
-            placeholderTextColor="#64748b"
-            style={styles.input}
-          />
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <Pressable
-            onPress={handleLogin}
-            disabled={loadingAuth}
-            style={[styles.primaryButton, loadingAuth && styles.primaryButtonDisabled]}
+      <ThemeModeProvider mode={themeMode}>
+        <SafeAreaView style={styles.root}>
+          <KeyboardAvoidingView
+            style={styles.loginWrapper}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <Text style={styles.primaryButtonText}>
-              {loadingAuth ? 'Ingresando...' : 'Ingresar'}
-            </Text>
-          </Pressable>
+            <Text style={styles.title}>POSLite Mobile</Text>
+            <Text style={styles.subtitle}>Inicia sesion para continuar</Text>
 
-          {offlineAvailable ? (
-            <>
-              <Pressable onPress={handleUseOfflineMode} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Continuar sin conexion</Text>
-              </Pressable>
-              <Text style={styles.offlineMeta}>
-                Ultimo cache: {new Date(cachedAt).toLocaleString()}
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              placeholder="Correo"
+              placeholderTextColor="#64748b"
+              style={styles.input}
+            />
+
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              placeholder="Contrasena"
+              placeholderTextColor="#64748b"
+              style={styles.input}
+            />
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+            <Pressable
+              onPress={handleLogin}
+              disabled={loadingAuth}
+              style={[styles.primaryButton, loadingAuth && styles.primaryButtonDisabled]}
+            >
+              <Text style={styles.primaryButtonText}>
+                {loadingAuth ? 'Ingresando...' : 'Ingresar'}
               </Text>
-            </>
-          ) : null}
-
-          {offlineAvailable ? (
-            <Pressable onPress={handleClearOfflineCache} style={styles.linkButton}>
-              <Text style={styles.linkButtonText}>Limpiar cache offline</Text>
             </Pressable>
-          ) : null}
-        </KeyboardAvoidingView>
-        <StatusBar style="auto" />
-      </SafeAreaView>
+
+            {offlineAvailable ? (
+              <>
+                <Pressable onPress={handleUseOfflineMode} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Continuar sin conexion</Text>
+                </Pressable>
+                <Text style={styles.offlineMeta}>
+                  Ultimo cache: {new Date(cachedAt).toLocaleString()}
+                </Text>
+              </>
+            ) : null}
+
+            {offlineAvailable ? (
+              <Pressable onPress={handleClearOfflineCache} style={styles.linkButton}>
+                <Text style={styles.linkButtonText}>Limpiar cache offline</Text>
+              </Pressable>
+            ) : null}
+          </KeyboardAvoidingView>
+          <StatusBar style="auto" />
+        </SafeAreaView>
+      </ThemeModeProvider>
     );
   }
 
@@ -747,7 +959,8 @@ export default function App() {
   const isLightTheme = themeMode === 'light';
 
   return (
-    <SafeAreaView style={isLightTheme ? styles.root : styles.rootDark}>
+    <ThemeModeProvider mode={themeMode}>
+      <SafeAreaView style={isLightTheme ? styles.root : styles.rootDark}>
       <View
         style={[
           styles.appBar,
@@ -784,19 +997,19 @@ export default function App() {
       <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.menuOverlay}>
           <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)} />
-          <View style={styles.menuDrawer}>
-            <View style={styles.menuHeader}>
-              <Text style={styles.menuHeaderTitle}>Menu</Text>
-              <Pressable onPress={() => setMenuOpen(false)} style={styles.menuCloseBtn}>
-                <Text style={styles.menuCloseText}>Cerrar</Text>
+          <View style={[styles.menuDrawer, isLightTheme ? null : styles.menuDrawerDark]}>
+            <View style={[styles.menuHeader, isLightTheme ? null : styles.menuHeaderDark]}>
+              <Text style={[styles.menuHeaderTitle, isLightTheme ? null : styles.menuHeaderTitleDark]}>Menu</Text>
+              <Pressable onPress={() => setMenuOpen(false)} style={[styles.menuCloseBtn, isLightTheme ? null : styles.menuCloseBtnDark]}>
+                <Text style={[styles.menuCloseText, isLightTheme ? null : styles.menuCloseTextDark]}>Cerrar</Text>
               </Pressable>
             </View>
-            <Text style={styles.menuUser}>{userProfile?.full_name || userEmail || 'Usuario'}</Text>
-            <Text style={styles.menuTenant}>{tenant?.tenant_name || 'Sin tenant'}</Text>
+            <Text style={[styles.menuUser, isLightTheme ? null : styles.menuUserDark]}>{userProfile?.full_name || userEmail || 'Usuario'}</Text>
+            <Text style={[styles.menuTenant, isLightTheme ? null : styles.menuTenantDark]}>{tenant?.tenant_name || 'Sin tenant'}</Text>
 
             <ScrollView contentContainerStyle={styles.menuContent}>
               {(menuTree || []).length === 0 ? (
-                <Text style={styles.menuEmptyText}>No hay menu disponible para este usuario.</Text>
+                <Text style={[styles.menuEmptyText, isLightTheme ? null : styles.menuEmptyTextDark]}>No hay menu disponible para este usuario.</Text>
               ) : null}
               {(menuTree || []).map((section) => {
                 const code = section.code || section.title;
@@ -806,7 +1019,7 @@ export default function App() {
                 return (
                   <View key={code} style={styles.menuSection}>
                     <Pressable
-                      style={styles.menuSectionBtn}
+                      style={[styles.menuSectionBtn, isLightTheme ? null : styles.menuSectionBtnDark]}
                       onPress={() => {
                         if (hasChildren) {
                           toggleSection(code);
@@ -815,9 +1028,9 @@ export default function App() {
                         handleMenuAction(section);
                       }}
                     >
-                      <Text style={styles.menuSectionText}>{section.label || section.title}</Text>
+                      <Text style={[styles.menuSectionText, isLightTheme ? null : styles.menuSectionTextDark]}>{section.label || section.title}</Text>
                       {hasChildren ? (
-                        <Text style={styles.menuChevron}>{isExpanded ? '−' : '+'}</Text>
+                        <Text style={[styles.menuChevron, isLightTheme ? null : styles.menuChevronDark]}>{isExpanded ? '−' : '+'}</Text>
                       ) : null}
                     </Pressable>
 
@@ -829,12 +1042,14 @@ export default function App() {
                             onPress={() => handleMenuAction(child)}
                             style={[
                               styles.menuChildBtn,
+                              isLightTheme ? null : styles.menuChildBtnDark,
                               !child.supportedOnMobile && !child.action && styles.menuChildBtnDisabled,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.menuChildText,
+                                isLightTheme ? null : styles.menuChildTextDark,
                                 !child.supportedOnMobile && !child.action && styles.menuChildTextDisabled,
                               ]}
                             >
@@ -857,6 +1072,7 @@ export default function App() {
           tenant={tenant}
           userProfile={userProfile}
           tenantSettings={tenantSettings}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           onPendingOpsChange={setPendingOpsCount}
           onSaleCompleted={() => loadDashboard(tenant?.tenant_id)}
@@ -866,7 +1082,10 @@ export default function App() {
           tenant={tenant}
           userProfile={userProfile}
           formatMoney={formatMoney}
+          themeMode={themeMode}
           offlineMode={offlineMode}
+          pendingOpsCount={pendingOpsCount}
+          onPendingOpsChange={setPendingOpsCount}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Layaway' ? (
@@ -874,12 +1093,14 @@ export default function App() {
           tenant={tenant}
           userProfile={userProfile}
           formatMoney={formatMoney}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'ThirdParties' ? (
         <ThirdPartiesScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
@@ -888,31 +1109,36 @@ export default function App() {
           tenant={tenant}
           userProfile={userProfile}
           formatMoney={formatMoney}
+          themeMode={themeMode}
           offlineMode={offlineMode}
         />
       ) : currentScreen === 'Products' ? (
         <ProductsScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Categories' ? (
         <CategoriesScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Units' ? (
         <UnitsScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'BulkImports' ? (
-        <BulkImportsScreen tenant={tenant} offlineMode={offlineMode} />
+        <BulkImportsScreen tenant={tenant} themeMode={themeMode} offlineMode={offlineMode} />
       ) : currentScreen === 'Inventory' ? (
         <InventoryScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
           formatMoney={formatMoney}
@@ -920,12 +1146,14 @@ export default function App() {
       ) : currentScreen === 'Batches' ? (
         <BatchesScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Purchases' ? (
         <PurchasesScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
           formatMoney={formatMoney}
@@ -933,12 +1161,14 @@ export default function App() {
       ) : currentScreen === 'ProductionOrders' ? (
         <ProductionOrdersScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'BOMs' ? (
         <BOMsScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
@@ -946,6 +1176,7 @@ export default function App() {
         <CashSessionsScreen
           tenant={tenant}
           userProfile={userProfile}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
           formatMoney={formatMoney}
@@ -953,6 +1184,7 @@ export default function App() {
       ) : currentScreen === 'CashRegisters' ? (
         <CashRegistersScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
@@ -960,24 +1192,27 @@ export default function App() {
         <CashAssignmentsScreen
           tenant={tenant}
           userProfile={userProfile}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'PaymentMethods' ? (
         <PaymentMethodsScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Reports' ? (
         <ReportsScreen
           tenant={tenant}
+          themeMode={themeMode}
           offlineMode={offlineMode}
           formatMoney={formatMoney}
           initialTab={reportsInitialTab}
         />
       ) : currentScreen === 'Setup' ? (
-        <SetupScreen onOpenScreen={setCurrentScreen} />
+        <SetupScreen onOpenScreen={setCurrentScreen} themeMode={themeMode} />
       ) : currentScreen === 'TenantConfig' ? (
         <TenantConfigScreen
           tenant={tenant}
@@ -986,67 +1221,71 @@ export default function App() {
           onLocalThemeChange={handleLocalThemeChange}
         />
       ) : currentScreen === 'Locations' ? (
-        <LocationsScreen tenant={tenant} offlineMode={offlineMode} pageSize={defaultPageSize} />
+        <LocationsScreen tenant={tenant} themeMode={themeMode} offlineMode={offlineMode} pageSize={defaultPageSize} />
       ) : currentScreen === 'Taxes' ? (
-        <TaxesScreen tenant={tenant} offlineMode={offlineMode} pageSize={defaultPageSize} />
+        <TaxesScreen tenant={tenant} themeMode={themeMode} offlineMode={offlineMode} pageSize={defaultPageSize} />
       ) : currentScreen === 'TaxRules' ? (
         <SetupPlaceholderScreen
+          themeMode={themeMode}
           title="Reglas de Impuesto"
           message="Pendiente de portar en mobile: reglas por categoria/producto/variante como en la web."
         />
       ) : currentScreen === 'PricingRules' ? (
         <SetupPlaceholderScreen
+          themeMode={themeMode}
           title="Reglas de Precio"
           message="Pendiente de portar en mobile: reglas por sede, prioridad y vigencia."
         />
       ) : currentScreen === 'Users' ? (
         <SetupPlaceholderScreen
+          themeMode={themeMode}
           title="Usuarios"
           message="Pendiente de portar en mobile: gestion de usuarios y asignacion de roles."
         />
       ) : currentScreen === 'RolesMenus' ? (
         <SetupPlaceholderScreen
+          themeMode={themeMode}
           title="Roles y Menus"
           message="Este modulo es administrado por superadmin en la web. En mobile queda de solo consulta futura."
         />
       ) : currentScreen === 'About' ? (
-        <AboutScreen tenant={tenant} userProfile={userProfile} offlineMode={offlineMode} />
+        <AboutScreen tenant={tenant} userProfile={userProfile} themeMode={themeMode} offlineMode={offlineMode} />
       ) : (
-        <ScrollView contentContainerStyle={styles.homeScrollDark}>
+        <ScrollView contentContainerStyle={[styles.homeScrollDark, isLightTheme && styles.homeScrollLight]}>
           <View style={styles.homeWrap}>
-          <Text style={styles.homeTitleDark}>Inicio</Text>
-          <Text style={styles.homeSubtitleDark}>
+          <Text style={[styles.homeTitleDark, isLightTheme && styles.homeTitleLight]}>Inicio</Text>
+          <Text style={[styles.homeSubtitleDark, isLightTheme && styles.homeSubtitleLight]}>
             {tenant?.tenant_name || 'Sin tenant'} · {tenant?.currency_code || '-'}
           </Text>
 
           <View style={styles.statusRowDark}>
-            <Text style={styles.statusTextDark}>
+            <Text style={[styles.statusTextDark, isLightTheme && styles.statusTextLight]}>
               {offlineMode ? 'Offline activo' : 'Online'} · {loadingMenu ? 'Menu cargando' : 'Menu listo'}
             </Text>
           </View>
 
-          <View style={[styles.kpiCardDark, styles.kpiBlue]}>
+          <View style={[styles.kpiCardDark, styles.kpiBlue, isLightTheme && styles.kpiBlueLight]}>
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiLabelDark}>Ventas Hoy</Text>
+            <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Ventas Hoy</Text>
               <Text style={styles.kpiIcon}>◔</Text>
             </View>
             <Text style={[styles.kpiAmountDark, styles.kpiBlueText]}>
               {loadingKpis ? '...' : formatMoney(kpis?.today?.total || 0)}
             </Text>
-            <Text style={styles.kpiMetaDark}>
+            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
               {loadingKpis ? 'Cargando...' : `${kpis?.today?.count || 0} transacciones`}
             </Text>
           </View>
 
-          <View style={[styles.kpiCardDark, styles.kpiGreen]}>
+          <View style={[styles.kpiCardDark, styles.kpiGreen, isLightTheme && styles.kpiGreenLight]}>
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiLabelDark}>Este Mes</Text>
+              <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Este Mes</Text>
               <Text style={styles.kpiIcon}>◔</Text>
             </View>
             <Text style={[styles.kpiAmountDark, styles.kpiGreenText]}>
               {loadingKpis ? '...' : formatMoney(kpis?.month?.total || 0)}
             </Text>
-            <Text style={styles.kpiMetaDark}>
+            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
               {loadingKpis
                 ? 'Cargando...'
                 : `${kpis?.month?.count || 0} transacciones${
@@ -1055,39 +1294,39 @@ export default function App() {
             </Text>
           </View>
 
-          <View style={[styles.kpiCardDark, styles.kpiPurple]}>
+          <View style={[styles.kpiCardDark, styles.kpiPurple, isLightTheme && styles.kpiPurpleLight]}>
             <View style={styles.kpiTopRow}>
-              <Text style={styles.kpiLabelDark}>Este Ano</Text>
+              <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Este Ano</Text>
               <Text style={styles.kpiIcon}>◔</Text>
             </View>
             <Text style={[styles.kpiAmountDark, styles.kpiPurpleText]}>
               {loadingKpis ? '...' : formatMoney(kpis?.year?.total || 0)}
             </Text>
-            <Text style={styles.kpiMetaDark}>
+            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
               {loadingKpis
                 ? 'Cargando...'
                 : `${kpis?.year?.count || 0} transacciones totales`}
             </Text>
           </View>
 
-          <View style={styles.sectionCardDark}>
-            <Text style={styles.sectionTitleDark}>Ventas diarias - ultimos 30 dias</Text>
-            <View style={styles.chartPlaceholder}>
+          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
+            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Ventas diarias - ultimos 30 dias</Text>
+            <View style={[styles.chartPlaceholder, isLightTheme && styles.chartPlaceholderLight]}>
               {loadingKpis ? (
-                <Text style={styles.chartPlaceholderText}>Cargando...</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
               ) : dailySeries.length === 0 ? (
-                <Text style={styles.chartPlaceholderText}>Sin datos</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
               ) : (
                 dailySeries.slice(-7).map((d) => {
                   const maxDaily = Math.max(...dailySeries.slice(-7).map((x) => Number(x.total || 0)), 1);
                   const widthPct = Math.max(4, Math.round((Number(d.total || 0) / maxDaily) * 100));
                   return (
                     <View key={d.date} style={styles.chartBarRow}>
-                      <Text style={styles.listLineLabel}>{d.date.slice(5)}</Text>
-                      <View style={styles.chartTrack}>
+                      <Text style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight]}>{d.date.slice(5)}</Text>
+                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
                         <View style={[styles.chartFillBlue, { width: `${widthPct}%` }]} />
                       </View>
-                      <Text style={styles.listLineValue}>{formatMoney(d.total || 0)}</Text>
+                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(d.total || 0)}</Text>
                     </View>
                   );
                 })
@@ -1095,13 +1334,13 @@ export default function App() {
             </View>
           </View>
 
-          <View style={styles.sectionCardDark}>
-            <Text style={styles.sectionTitleDark}>Metodos de pago (mes)</Text>
-            <View style={styles.chartPlaceholderSmall}>
+          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
+            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Metodos de pago (mes)</Text>
+            <View style={[styles.chartPlaceholderSmall, isLightTheme && styles.chartPlaceholderLight]}>
               {loadingKpis ? (
-                <Text style={styles.chartPlaceholderText}>Cargando...</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
               ) : paymentMethodsSeries.length === 0 ? (
-                <Text style={styles.chartPlaceholderText}>Sin datos</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
               ) : (
                 paymentMethodsSeries.slice(0, 5).map((p) => {
                   const maxPay = Math.max(
@@ -1111,13 +1350,13 @@ export default function App() {
                   const widthPct = Math.max(6, Math.round((Number(p.total || 0) / maxPay) * 100));
                   return (
                     <View key={p.method} style={styles.chartBarRow}>
-                      <Text numberOfLines={1} style={[styles.listLineLabel, { width: 90 }]}>
+                      <Text numberOfLines={1} style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight, { width: 90 }]}>
                         {p.method}
                       </Text>
-                      <View style={styles.chartTrack}>
+                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
                         <View style={[styles.chartFillTeal, { width: `${widthPct}%` }]} />
                       </View>
-                      <Text style={styles.listLineValue}>{formatMoney(p.total || 0)}</Text>
+                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(p.total || 0)}</Text>
                     </View>
                   );
                 })
@@ -1125,13 +1364,13 @@ export default function App() {
             </View>
           </View>
 
-          <View style={styles.sectionCardDark}>
-            <Text style={styles.sectionTitleDark}>Top productos del mes</Text>
-            <View style={styles.chartPlaceholderSmall}>
+          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
+            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Top productos del mes</Text>
+            <View style={[styles.chartPlaceholderSmall, isLightTheme && styles.chartPlaceholderLight]}>
               {loadingKpis ? (
-                <Text style={styles.chartPlaceholderText}>Cargando...</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
               ) : topProducts.length === 0 ? (
-                <Text style={styles.chartPlaceholderText}>Sin datos</Text>
+                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
               ) : (
                 topProducts.slice(0, 5).map((p, idx) => {
                   const maxRevenue = Math.max(
@@ -1141,13 +1380,13 @@ export default function App() {
                   const widthPct = Math.max(6, Math.round((Number(p.revenue || 0) / maxRevenue) * 100));
                   return (
                     <View key={`${p.name}-${idx}`} style={styles.chartBarRow}>
-                      <Text numberOfLines={1} style={[styles.listLineLabel, { width: 110 }]}>
+                      <Text numberOfLines={1} style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight, { width: 110 }]}>
                         {p.name}
                       </Text>
-                      <View style={styles.chartTrack}>
+                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
                         <View style={[styles.chartFillOrange, { width: `${widthPct}%` }]} />
                       </View>
-                      <Text style={styles.listLineValue}>{formatMoney(p.revenue || 0)}</Text>
+                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(p.revenue || 0)}</Text>
                     </View>
                   );
                 })
@@ -1155,16 +1394,16 @@ export default function App() {
             </View>
           </View>
 
-          <View style={styles.panelDark}>
-            <Text style={styles.panelTitleDark}>Contexto</Text>
-            <Text style={styles.panelLineDark}>Usuario: {userProfile?.full_name || userEmail || 'Usuario'}</Text>
-            <Text style={styles.panelLineDark}>Roles: {rolesText}</Text>
-            <Text style={styles.panelLineDark}>Page size listados: {defaultPageSize}</Text>
-            <Text style={styles.panelLineDark}>Pendientes sync: {pendingOpsCount}</Text>
-            <Text style={styles.panelLineDark}>
+          <View style={[styles.panelDark, isLightTheme && styles.panelLight]}>
+            <Text style={[styles.panelTitleDark, isLightTheme && styles.panelTitleLight]}>Contexto</Text>
+            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Usuario: {userProfile?.full_name || userEmail || 'Usuario'}</Text>
+            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Roles: {rolesText}</Text>
+            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Page size listados: {defaultPageSize}</Text>
+            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Pendientes sync: {pendingOpsCount}</Text>
+            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>
               Menu mobile: {supportedMenuItemsCount}/{menuItemsCount}
             </Text>
-            <Text style={styles.panelLineMutedDark}>
+            <Text style={[styles.panelLineMutedDark, isLightTheme && styles.panelLineMutedLight]}>
               {menuCachedAt
                 ? `Cache menu: ${new Date(menuCachedAt).toLocaleString()}`
                 : 'Sin cache de menu local'}
@@ -1187,7 +1426,8 @@ export default function App() {
         backgroundColor={isLightTheme ? '#f8fafc' : '#111827'}
         translucent={false}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </ThemeModeProvider>
   );
 }
 
@@ -1303,6 +1543,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     paddingBottom: 14,
   },
+  menuDrawerDark: {
+    backgroundColor: '#0f172a',
+  },
   menuHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1313,10 +1556,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
   },
+  menuHeaderDark: {
+    borderBottomColor: '#1f2937',
+  },
   menuHeaderTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#0f172a',
+  },
+  menuHeaderTitleDark: {
+    color: '#f8fafc',
   },
   menuCloseBtn: {
     borderWidth: 1,
@@ -1325,10 +1574,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
+  menuCloseBtnDark: {
+    borderColor: '#334155',
+    backgroundColor: '#111827',
+  },
   menuCloseText: {
     color: '#334155',
     fontSize: 12,
     fontWeight: '600',
+  },
+  menuCloseTextDark: {
+    color: '#cbd5e1',
   },
   menuUser: {
     paddingHorizontal: 14,
@@ -1337,11 +1593,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  menuUserDark: {
+    color: '#e2e8f0',
+  },
   menuTenant: {
     paddingHorizontal: 14,
     color: '#64748b',
     fontSize: 12,
     marginBottom: 8,
+  },
+  menuTenantDark: {
+    color: '#94a3b8',
   },
   menuContent: {
     paddingHorizontal: 10,
@@ -1352,6 +1614,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     paddingHorizontal: 8,
     paddingVertical: 10,
+  },
+  menuEmptyTextDark: {
+    color: '#94a3b8',
   },
   menuSection: {
     marginBottom: 6,
@@ -1365,15 +1630,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#f8fafc',
   },
+  menuSectionBtnDark: {
+    backgroundColor: '#111827',
+  },
   menuSectionText: {
     color: '#0f172a',
     fontWeight: '700',
     fontSize: 14,
   },
+  menuSectionTextDark: {
+    color: '#e2e8f0',
+  },
   menuChevron: {
     color: '#334155',
     fontSize: 18,
     fontWeight: '700',
+  },
+  menuChevronDark: {
+    color: '#cbd5e1',
   },
   menuChildren: {
     marginTop: 4,
@@ -1387,6 +1661,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
     marginBottom: 4,
   },
+  menuChildBtnDark: {
+    backgroundColor: '#1f2937',
+  },
   menuChildBtnDisabled: {
     opacity: 0.55,
   },
@@ -1394,6 +1671,9 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     fontSize: 13,
     fontWeight: '500',
+  },
+  menuChildTextDark: {
+    color: '#e2e8f0',
   },
   menuChildTextDisabled: {
     color: '#64748b',
@@ -1466,8 +1746,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 10,
   },
+  homeSubtitleLight: {
+    color: '#475569',
+  },
   homeScrollDark: {
     paddingBottom: 24,
+  },
+  homeScrollLight: {
+    backgroundColor: '#f8fafc',
+  },
+  homeTitleLight: {
+    color: '#0f172a',
   },
   statusRowDark: {
     marginBottom: 10,
@@ -1475,6 +1764,9 @@ const styles = StyleSheet.create({
   statusTextDark: {
     color: '#cbd5e1',
     fontSize: 12,
+  },
+  statusTextLight: {
+    color: '#334155',
   },
   kpiCardDark: {
     borderRadius: 14,
@@ -1487,13 +1779,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f2434',
     borderColor: '#1d4f7a',
   },
+  kpiBlueLight: {
+    backgroundColor: '#eef6ff',
+    borderColor: '#bfdbfe',
+  },
   kpiGreen: {
     backgroundColor: '#0f2a1b',
     borderColor: '#245d3b',
   },
+  kpiGreenLight: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#a7f3d0',
+  },
   kpiPurple: {
     backgroundColor: '#261133',
     borderColor: '#54316e',
+  },
+  kpiPurpleLight: {
+    backgroundColor: '#f5f3ff',
+    borderColor: '#ddd6fe',
   },
   kpiTopRow: {
     flexDirection: 'row',
@@ -1505,6 +1809,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textTransform: 'uppercase',
     fontWeight: '700',
+  },
+  kpiLabelLight: {
+    color: '#475569',
   },
   kpiIcon: {
     color: '#cbd5e1',
@@ -1530,6 +1837,9 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     fontSize: 13,
   },
+  kpiMetaLight: {
+    color: '#334155',
+  },
   sectionCardDark: {
     marginTop: 4,
     marginBottom: 10,
@@ -1539,11 +1849,18 @@ const styles = StyleSheet.create({
     borderColor: '#2a3240',
     padding: 10,
   },
+  sectionCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   sectionTitleDark: {
     color: '#e2e8f0',
     fontSize: 15,
     fontWeight: '700',
     marginBottom: 8,
+  },
+  sectionTitleLight: {
+    color: '#0f172a',
   },
   chartPlaceholder: {
     height: 170,
@@ -1563,11 +1880,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
+  chartPlaceholderLight: {
+    backgroundColor: '#f1f5f9',
+  },
   chartPlaceholderText: {
     color: '#94a3b8',
     fontSize: 14,
     textAlign: 'center',
     marginTop: 10,
+  },
+  chartPlaceholderTextLight: {
+    color: '#64748b',
   },
   listLineRow: {
     flexDirection: 'row',
@@ -1592,6 +1915,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
     overflow: 'hidden',
   },
+  chartTrackLight: {
+    backgroundColor: '#dbe4ef',
+  },
   chartFillBlue: {
     height: '100%',
     borderRadius: 999,
@@ -1612,10 +1938,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginRight: 8,
   },
+  listLineLabelLight: {
+    color: '#475569',
+  },
   listLineValue: {
     color: '#93c5fd',
     fontSize: 12,
     fontWeight: '700',
+  },
+  listLineValueLight: {
+    color: '#1d4ed8',
   },
   panelDark: {
     marginTop: 4,
@@ -1625,6 +1957,10 @@ const styles = StyleSheet.create({
     borderColor: '#263243',
     padding: 12,
   },
+  panelLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   panelTitleDark: {
     color: '#e2e8f0',
     fontSize: 13,
@@ -1632,15 +1968,24 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 8,
   },
+  panelTitleLight: {
+    color: '#0f172a',
+  },
   panelLineDark: {
     color: '#cbd5e1',
     fontSize: 13,
     marginBottom: 4,
   },
+  panelLineLight: {
+    color: '#334155',
+  },
   panelLineMutedDark: {
     marginTop: 2,
     color: '#94a3b8',
     fontSize: 12,
+  },
+  panelLineMutedLight: {
+    color: '#64748b',
   },
   homeCard: {
     marginHorizontal: 20,

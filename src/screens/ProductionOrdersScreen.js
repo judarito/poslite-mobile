@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   listLocations,
   listProductionOrders,
@@ -18,6 +19,8 @@ function statusColor(status) {
 }
 
 export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [locations, setLocations] = useState([]);
 
   const {
@@ -58,9 +61,9 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
   }, [tenant?.tenant_id]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.noticeBox}>
-        <Text style={styles.noticeText}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
+      <View style={[styles.noticeBox, isLightTheme && styles.noticeBoxLight]}>
+        <Text style={[styles.noticeText, isLightTheme && styles.noticeTextLight]}>
           Órdenes en mobile: monitoreo de estado y avance. Gestión operativa completa en web.
         </Text>
       </View>
@@ -68,10 +71,22 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <View style={styles.chipsRow}>
           <Pressable
-            style={[styles.filterChip, !filters?.location_id && styles.filterChipActive]}
+            style={[
+              styles.filterChip,
+              isLightTheme && styles.filterChipLight,
+              !filters?.location_id && styles.filterChipActive,
+              !filters?.location_id && isLightTheme && styles.filterChipActiveLight,
+            ]}
             onPress={() => updateFilters({ location_id: '' })}
           >
-            <Text style={[styles.filterChipText, !filters?.location_id && styles.filterChipTextActive]}>
+            <Text
+              style={[
+                styles.filterChipText,
+                isLightTheme && styles.filterChipTextLight,
+                !filters?.location_id && styles.filterChipTextActive,
+                !filters?.location_id && isLightTheme && styles.filterChipTextActiveLight,
+              ]}
+            >
               Todas sedes
             </Text>
           </Pressable>
@@ -80,10 +95,24 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
             return (
               <Pressable
                 key={loc.location_id}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isLightTheme && styles.filterChipLight,
+                  active && styles.filterChipActive,
+                  active && isLightTheme && styles.filterChipActiveLight,
+                ]}
                 onPress={() => updateFilters({ location_id: loc.location_id })}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{loc.name}</Text>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isLightTheme && styles.filterChipTextLight,
+                    active && styles.filterChipTextActive,
+                    active && isLightTheme && styles.filterChipTextActiveLight,
+                  ]}
+                >
+                  {loc.name}
+                </Text>
               </Pressable>
             );
           })}
@@ -97,10 +126,22 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
             return (
               <Pressable
                 key={status || 'all'}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isLightTheme && styles.filterChipLight,
+                  active && styles.filterChipActive,
+                  active && isLightTheme && styles.filterChipActiveLight,
+                ]}
                 onPress={() => updateFilters({ status })}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isLightTheme && styles.filterChipTextLight,
+                    active && styles.filterChipTextActive,
+                    active && isLightTheme && styles.filterChipTextActiveLight,
+                  ]}
+                >
                   {status || 'Todos'}
                 </Text>
               </Pressable>
@@ -110,6 +151,7 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Ordenes de Produccion"
         loading={loading}
         error={error}
@@ -125,21 +167,21 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
             : null
         }
         renderItem={(item) => (
-          <View key={item.production_order_id} style={styles.card}>
-            <Text style={styles.title}>{item.order_number || 'Sin numero'}</Text>
-            <Text style={styles.meta}>{item.location?.name || 'Sin sede'}</Text>
-            <Text style={styles.meta}>
+          <View key={item.production_order_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.order_number || 'Sin numero'}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.location?.name || 'Sin sede'}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
               {item.bom?.bom_name || 'Sin BOM'} · {item.bom?.product?.name || item.bom?.variant?.variant_name || '-'}
             </Text>
             <View style={styles.badgesRow}>
-              <View style={[styles.badge, { borderColor: statusColor(item.status) }]}>
-                <Text style={styles.badgeText}>{item.status || '-'}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: statusColor(item.status) }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.status || '-'}</Text>
               </View>
-              <View style={[styles.badge, { borderColor: '#a78bfa' }]}>
-                <Text style={styles.badgeText}>Plan {Number(item.quantity_planned || 0).toLocaleString('es-CO')}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Plan {Number(item.quantity_planned || 0).toLocaleString('es-CO')}</Text>
               </View>
-              <View style={[styles.badge, { borderColor: '#16a34a' }]}>
-                <Text style={styles.badgeText}>Prod {Number(item.quantity_produced || 0).toLocaleString('es-CO')}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#16a34a' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Prod {Number(item.quantity_produced || 0).toLocaleString('es-CO')}</Text>
               </View>
             </View>
           </View>
@@ -151,6 +193,7 @@ export default function ProductionOrdersScreen({ tenant, offlineMode, pageSize =
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   noticeBox: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -160,6 +203,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   noticeText: { color: '#cbd5e1', fontSize: 12 },
+  noticeBoxLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  noticeTextLight: { color: '#475569' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -171,8 +216,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActiveLight: { color: '#0369a1' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -181,8 +230,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -191,5 +243,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#0f172a',
   },
+  badgeLight: { backgroundColor: '#f8fafc' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  badgeTextLight: { color: '#334155' },
 });

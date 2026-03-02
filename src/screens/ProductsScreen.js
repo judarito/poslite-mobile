@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import { listActiveUnits } from '../services/units.service';
 import {
   createProduct,
@@ -34,6 +35,8 @@ function boolText(value, yes, no) {
 }
 
 export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -175,23 +178,23 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
   };
 
   const renderSelectorOption = (label, active, onPress) => (
-    <Pressable style={[styles.selectorOption, active && styles.selectorOptionActive]} onPress={onPress}>
-      <Text style={[styles.selectorText, active && styles.selectorTextActive]}>{label}</Text>
+    <Pressable style={[styles.selectorOption, isLightTheme && styles.selectorOptionLight, active && styles.selectorOptionActive]} onPress={onPress}>
+      <Text style={[styles.selectorText, isLightTheme && styles.selectorTextLight, active && styles.selectorTextActive]}>{label}</Text>
     </Pressable>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.tabRow}>
         {PRODUCT_TABS.map((tab) => {
           const active = Boolean(filters?.isComponent) === tab.value;
           return (
             <Pressable
               key={tab.label}
-              style={[styles.tabBtn, active && styles.tabBtnActive]}
+              style={[styles.tabBtn, isLightTheme && styles.tabBtnLight, active && styles.tabBtnActive]}
               onPress={() => updateFilters({ isComponent: tab.value })}
             >
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label}</Text>
+              <Text style={[styles.tabText, isLightTheme && styles.tabTextLight, active && styles.tabTextActive]}>{tab.label}</Text>
             </Pressable>
           );
         })}
@@ -199,7 +202,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
       <View style={styles.toolbar}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isLightTheme && styles.searchInputLight]}
           value={search}
           onChangeText={setSearch}
           placeholder="Buscar por nombre o descripcion"
@@ -212,6 +215,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
       </View>
 
       <PaginatedList
+        themeMode={themeMode}
         title={filters?.isComponent ? 'Insumos / Componentes' : 'Productos'}
         loading={loading}
         error={error}
@@ -227,10 +231,10 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
             : null
         }
         renderItem={(item) => (
-          <View key={item.product_id} style={styles.card}>
-            <Text style={styles.title}>{item.name}</Text>
-            <Text style={styles.meta}>{item.category?.name || 'Sin categoria'}</Text>
-            <Text style={styles.meta}>{item.unit ? `${item.unit.code} - ${item.unit.name}` : 'Sin unidad'}</Text>
+          <View key={item.product_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.name}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.category?.name || 'Sin categoria'}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.unit ? `${item.unit.code} - ${item.unit.name}` : 'Sin unidad'}</Text>
             <View style={styles.badgesRow}>
               <View style={[styles.badge, item.is_active ? styles.badgeGreen : styles.badgeRed]}>
                 <Text style={styles.badgeText}>{item.is_active ? 'Activo' : 'Inactivo'}</Text>
@@ -262,12 +266,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             <ScrollView>
-              <Text style={styles.modalTitle}>{form.product_id ? 'Editar producto' : 'Nuevo producto'}</Text>
+              <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>{form.product_id ? 'Editar producto' : 'Nuevo producto'}</Text>
 
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.name}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, name: v }))}
                 placeholder="Nombre *"
@@ -275,7 +279,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
               />
 
               <TextInput
-                style={[styles.input, { minHeight: 70 }]}
+                style={[styles.input, isLightTheme && styles.inputLight, { minHeight: 70 }]}
                 value={form.description}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, description: v }))}
                 placeholder="Descripcion"
@@ -283,31 +287,31 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 multiline
               />
 
-              <Text style={styles.groupTitle}>Tipo</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Tipo</Text>
               <View style={styles.toggleRow}>
                 <Pressable
-                  style={[styles.toggleBtn, !form.is_component && styles.toggleBtnActive]}
+                  style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, !form.is_component && styles.toggleBtnActive]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_component: false, inventory_behavior: 'RESELL' }))
                   }
                 >
-                  <Text style={[styles.toggleBtnText, !form.is_component && styles.toggleBtnTextActive]}>
+                  <Text style={[styles.toggleBtnText, isLightTheme && styles.toggleBtnTextLight, !form.is_component && styles.toggleBtnTextActive]}>
                     Producto para venta
                   </Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.toggleBtn, form.is_component && styles.toggleBtnActive]}
+                  style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, form.is_component && styles.toggleBtnActive]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_component: true, inventory_behavior: 'MANUFACTURED' }))
                   }
                 >
-                  <Text style={[styles.toggleBtnText, form.is_component && styles.toggleBtnTextActive]}>
+                  <Text style={[styles.toggleBtnText, isLightTheme && styles.toggleBtnTextLight, form.is_component && styles.toggleBtnTextActive]}>
                     Componente
                   </Text>
                 </Pressable>
               </View>
 
-              <Text style={styles.groupTitle}>Categoria</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Categoria</Text>
               {renderSelectorOption('Sin categoria', form.category_id === null, () =>
                 setForm((prev) => ({ ...prev, category_id: null })),
               )}
@@ -317,7 +321,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 ),
               )}
 
-              <Text style={styles.groupTitle}>Unidad de medida</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Unidad de medida</Text>
               {renderSelectorOption('Sin unidad', form.unit_id === null, () =>
                 setForm((prev) => ({ ...prev, unit_id: null })),
               )}
@@ -329,32 +333,32 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 ),
               )}
 
-              <Text style={styles.groupTitle}>Configuracion</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Configuracion</Text>
               <View style={styles.switchRowWrap}>
                 <Pressable
-                  style={[styles.switchCard, form.is_active && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_active && styles.switchCardActive]}
                   onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
                 >
-                  <Text style={styles.switchTitle}>Producto activo</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.is_active, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Producto activo</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.is_active, 'Si', 'No')}</Text>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, form.track_inventory && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.track_inventory && styles.switchCardActive]}
                   onPress={() => setForm((prev) => ({ ...prev, track_inventory: !prev.track_inventory }))}
                 >
-                  <Text style={styles.switchTitle}>Controla inventario</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.track_inventory, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Controla inventario</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.track_inventory, 'Si', 'No')}</Text>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, form.requires_expiration && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.requires_expiration && styles.switchCardActive]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, requires_expiration: !prev.requires_expiration }))
                   }
                 >
-                  <Text style={styles.switchTitle}>Maneja vencimiento</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.requires_expiration, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Maneja vencimiento</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.requires_expiration, 'Si', 'No')}</Text>
                 </Pressable>
               </View>
 
@@ -375,6 +379,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   tabBtn: {
     flex: 1,
@@ -385,8 +390,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
   },
+  tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   tabBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabTextLight: { color: '#334155' },
   tabTextActive: { color: '#bae6fd' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
@@ -398,6 +405,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     color: '#f8fafc',
     paddingHorizontal: 10,
+  },
+  searchInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
   },
   searchBtn: {
     backgroundColor: '#1e40af',
@@ -415,8 +427,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -465,7 +480,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#f8fafc' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: {
     color: '#93c5fd',
     marginTop: 12,
@@ -474,6 +491,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
+  groupTitleLight: { color: '#1d4ed8' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -484,6 +502,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', color: '#0f172a', backgroundColor: '#ffffff' },
   toggleRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   toggleBtn: {
     flex: 1,
@@ -494,8 +513,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#111827',
   },
+  toggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   toggleBtnActive: { borderColor: '#2563eb', backgroundColor: '#172554' },
   toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  toggleBtnTextLight: { color: '#334155' },
   toggleBtnTextActive: { color: '#bfdbfe' },
   selectorOption: {
     borderWidth: 1,
@@ -506,8 +527,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 8,
   },
+  selectorOptionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   selectorOptionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   selectorText: { color: '#cbd5e1', fontWeight: '600' },
+  selectorTextLight: { color: '#334155' },
   selectorTextActive: { color: '#bae6fd' },
   switchRowWrap: { gap: 8, marginTop: 8 },
   switchCard: {
@@ -517,9 +540,12 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: '#111827',
   },
+  switchCardLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
   switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  switchTitleLight: { color: '#0f172a' },
   switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
+  switchDescLight: { color: '#1d4ed8' },
   primaryBtn: {
     marginTop: 14,
     backgroundColor: '#d97706',

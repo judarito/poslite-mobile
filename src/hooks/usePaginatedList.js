@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getPageCache, savePageCache } from '../services/offlineCache.service';
+import { getLatestPageCache, getPageCache, savePageCache } from '../services/offlineCache.service';
 
 export function usePaginatedList({
   tenantId,
@@ -7,6 +7,7 @@ export function usePaginatedList({
   offlineMode,
   cacheNamespace,
   fetchPage,
+  fetchOfflinePage,
   initialFilters = {},
 }) {
   const [items, setItems] = useState([]);
@@ -30,7 +31,38 @@ export function usePaginatedList({
       setError('');
 
       if (offlineMode) {
-        const cached = await getPageCache({
+        if (fetchOfflinePage) {
+          const offlineResult = await fetchOfflinePage({
+            tenantId,
+            page: nextPage,
+            pageSize,
+            filters: nextFilters,
+          });
+
+          if (offlineResult?.success) {
+            const nextItems = offlineResult.data || [];
+            const nextTotal = Number(offlineResult.total || 0);
+            setItems(nextItems);
+            setTotal(nextTotal);
+            setCacheInfo({
+              source: offlineResult.source || 'offline-local',
+              cachedAt: offlineResult.cachedAt || new Date().toISOString(),
+            });
+            await savePageCache({
+              namespace: cacheNamespace,
+              tenantId,
+              page: nextPage,
+              pageSize,
+              filters: nextFilters,
+              items: nextItems,
+              total: nextTotal,
+            });
+            setLoading(false);
+            return;
+          }
+        }
+
+        const exactCached = await getPageCache({
           namespace: cacheNamespace,
           tenantId,
           page: nextPage,
@@ -38,10 +70,20 @@ export function usePaginatedList({
           filters: nextFilters,
         });
 
+        const cached =
+          exactCached ||
+          (await getLatestPageCache({
+            namespace: cacheNamespace,
+            tenantId,
+          }));
+
         if (cached) {
           setItems(cached.items || []);
           setTotal(Number(cached.total || 0));
-          setCacheInfo({ source: 'cache', cachedAt: cached.cachedAt || null });
+          setCacheInfo({
+            source: exactCached ? 'cache' : 'cache-latest',
+            cachedAt: cached.cachedAt || null,
+          });
           setLoading(false);
           return;
         }
@@ -62,7 +104,7 @@ export function usePaginatedList({
       });
 
       if (!result?.success) {
-        const fallback = await getPageCache({
+        const exactFallback = await getPageCache({
           namespace: cacheNamespace,
           tenantId,
           page: nextPage,
@@ -70,11 +112,21 @@ export function usePaginatedList({
           filters: nextFilters,
         });
 
+        const fallback =
+          exactFallback ||
+          (await getLatestPageCache({
+            namespace: cacheNamespace,
+            tenantId,
+          }));
+
         if (fallback) {
           setItems(fallback.items || []);
           setTotal(Number(fallback.total || 0));
           setError(result?.error || 'Sin conexión. Mostrando cache local.');
-          setCacheInfo({ source: 'cache', cachedAt: fallback.cachedAt || null });
+          setCacheInfo({
+            source: exactFallback ? 'cache' : 'cache-latest',
+            cachedAt: fallback.cachedAt || null,
+          });
         } else {
           setItems([]);
           setTotal(0);
@@ -104,7 +156,7 @@ export function usePaginatedList({
 
       setLoading(false);
     },
-    [cacheNamespace, fetchPage, filters, offlineMode, page, pageSize, tenantId],
+    [cacheNamespace, fetchOfflinePage, fetchPage, filters, offlineMode, page, pageSize, tenantId],
   );
 
   const changePage = useCallback(

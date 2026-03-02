@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   addLayawayPayment,
   cancelLayaway,
@@ -28,6 +29,8 @@ export default function LayawayScreen({
   offlineMode,
   pageSize = 20,
 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detail, setDetail] = useState(null);
   const [payAmount, setPayAmount] = useState('');
@@ -140,7 +143,7 @@ export default function LayawayScreen({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         {STATUS_FILTERS.map((s) => {
           const active = (filters?.status || '') === s;
@@ -148,16 +151,17 @@ export default function LayawayScreen({
           return (
             <Pressable
               key={label}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
               onPress={() => updateFilters({ status: s })}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Plan Separe"
         loading={loading}
         error={error}
@@ -173,13 +177,13 @@ export default function LayawayScreen({
             : null
         }
         renderItem={(item) => (
-          <Pressable key={item.layaway_id} style={styles.card} onPress={() => openDetail(item.layaway_id)}>
+          <Pressable key={item.layaway_id} style={[styles.card, isLightTheme && styles.cardLight]} onPress={() => openDetail(item.layaway_id)}>
             <View style={styles.cardTopRow}>
-              <Text style={styles.saleNumber}>{item.contract_number || item.layaway_id?.slice(0, 8)}</Text>
+              <Text style={[styles.saleNumber, isLightTheme && styles.saleNumberLight]}>{item.contract_number || item.layaway_id?.slice(0, 8)}</Text>
               <Text style={styles.status}>{item.status}</Text>
             </View>
-            <Text style={styles.metaLine}>Cliente: {item.customer_name || 'Sin cliente'}</Text>
-            <Text style={styles.metaLine}>Saldo: {formatMoney(item.balance || 0)}</Text>
+            <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Cliente: {item.customer_name || 'Sin cliente'}</Text>
+            <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Saldo: {formatMoney(item.balance || 0)}</Text>
             <Text style={styles.total}>{formatMoney(item.total || 0)}</Text>
           </Pressable>
         )}
@@ -187,40 +191,40 @@ export default function LayawayScreen({
 
       <Modal visible={Boolean(detail) || loadingDetail} transparent animationType="slide" onRequestClose={() => setDetail(null)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             {loadingDetail ? (
               <ActivityIndicator color="#4ade80" />
             ) : (
               <ScrollView>
-                <Text style={styles.modalTitle}>Contrato</Text>
-                <Text style={styles.metaLine}>{detail?.contract_number || detail?.layaway_id}</Text>
-                <Text style={styles.metaLine}>Cliente: {detail?.customer?.full_name || '-'}</Text>
-                <Text style={styles.metaLine}>Total: {formatMoney(detail?.total || 0)}</Text>
-                <Text style={styles.metaLine}>Pagado: {formatMoney(detail?.paid_total || 0)}</Text>
-                <Text style={styles.metaLine}>Saldo: {formatMoney(detail?.balance || 0)}</Text>
-                <Text style={styles.metaLine}>Estado: {detail?.status || '-'}</Text>
+                <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Contrato</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{detail?.contract_number || detail?.layaway_id}</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Cliente: {detail?.customer?.full_name || '-'}</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Total: {formatMoney(detail?.total || 0)}</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Pagado: {formatMoney(detail?.paid_total || 0)}</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Saldo: {formatMoney(detail?.balance || 0)}</Text>
+                <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Estado: {detail?.status || '-'}</Text>
 
                 <Text style={styles.groupTitle}>Items</Text>
                 {(detail?.items || []).map((line) => (
                   <View key={line.layaway_item_id} style={styles.detailRow}>
-                    <Text style={styles.metaLine}>{line.variant?.product?.name || line.variant?.variant_name || '-'}</Text>
-                    <Text style={styles.metaLine}>x {line.quantity}</Text>
+                    <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{line.variant?.product?.name || line.variant?.variant_name || '-'}</Text>
+                    <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>x {line.quantity}</Text>
                   </View>
                 ))}
 
                 <Text style={styles.groupTitle}>Abonos</Text>
                 {(detail?.payments || []).map((payment) => (
                   <View key={payment.layaway_payment_id} style={styles.detailRow}>
-                    <Text style={styles.metaLine}>{payment.payment_method_name || payment.payment_method_code || 'Pago'}</Text>
-                    <Text style={styles.metaLine}>{formatMoney(payment.amount || 0)}</Text>
+                    <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{payment.payment_method_name || payment.payment_method_code || 'Pago'}</Text>
+                    <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{formatMoney(payment.amount || 0)}</Text>
                   </View>
                 ))}
 
                 {detail?.status === 'ACTIVE' ? (
-                  <View style={styles.actionBox}>
+                  <View style={[styles.actionBox, isLightTheme && styles.actionBoxLight]}>
                     <Text style={styles.groupTitle}>Registrar abono</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, isLightTheme && styles.inputLight]}
                       value={payAmount}
                       onChangeText={setPayAmount}
                       placeholder="Monto"
@@ -228,14 +232,14 @@ export default function LayawayScreen({
                       keyboardType="numeric"
                     />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, isLightTheme && styles.inputLight]}
                       value={payMethodCode}
                       onChangeText={setPayMethodCode}
                       placeholder="Metodo (CASH, CARD, TRANSFER...)"
                       placeholderTextColor="#64748b"
                     />
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, isLightTheme && styles.inputLight]}
                       value={payRef}
                       onChangeText={setPayRef}
                       placeholder="Referencia (opcional)"
@@ -270,6 +274,7 @@ export default function LayawayScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700', marginBottom: 10 },
   filtersScroll: { maxHeight: 40, marginBottom: 8 },
   filterChip: {
@@ -280,15 +285,20 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginRight: 8,
   },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipActive: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#052e16' },
   list: { flex: 1 },
   card: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#1f2937', borderRadius: 12, padding: 12, marginBottom: 8 },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   saleNumber: { color: '#f8fafc', fontWeight: '700' },
+  saleNumberLight: { color: '#0f172a' },
   status: { color: '#86efac', fontSize: 12, fontWeight: '700' },
   metaLine: { color: '#cbd5e1', fontSize: 13, marginBottom: 2 },
+  metaLineLight: { color: '#475569' },
   total: { color: '#34d399', fontSize: 18, fontWeight: '700', marginTop: 4 },
   empty: { color: '#94a3b8', marginTop: 14, textAlign: 'center' },
   error: { color: '#f87171', marginBottom: 8 },
@@ -299,10 +309,13 @@ const styles = StyleSheet.create({
   pageText: { color: '#94a3b8' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: { maxHeight: '88%', backgroundColor: '#0f172a', borderTopLeftRadius: 14, borderTopRightRadius: 14, padding: 14 },
+  modalBodyLight: { backgroundColor: '#f8fafc' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: { color: '#4ade80', marginTop: 10, marginBottom: 4, fontWeight: '700' },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, borderBottomWidth: 1, borderBottomColor: '#1e293b', paddingVertical: 6 },
   actionBox: { marginTop: 8, borderWidth: 1, borderColor: '#1f2937', borderRadius: 10, padding: 10 },
+  actionBoxLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -313,6 +326,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   primaryBtn: { marginTop: 10, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   primaryBtnText: { color: '#ecfdf5', fontWeight: '700' },
   inlineActions: { flexDirection: 'row', gap: 8, marginTop: 8 },

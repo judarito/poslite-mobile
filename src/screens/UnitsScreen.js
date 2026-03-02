@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import { createUnit, listUnits, removeUnit, updateUnit } from '../services/units.service';
 
 const EMPTY_FORM = {
@@ -18,6 +19,8 @@ function boolText(value, yes, no) {
 }
 
 export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -144,7 +147,7 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.toolbar}>
         <TextInput
           style={styles.searchInput}
@@ -160,6 +163,7 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
       </View>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Unidades"
         loading={loading}
         error={error}
@@ -271,7 +275,7 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,

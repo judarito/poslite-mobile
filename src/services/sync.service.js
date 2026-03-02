@@ -7,7 +7,14 @@ import {
 } from '../storage/sqlite/database';
 import { createSale } from './pos.service';
 
-const MAX_RETRIES = 5;
+function isNonRetriableSyncError(message) {
+  const text = String(message || '').toLowerCase();
+  return (
+    text.includes('stock insuficiente') ||
+    text.includes('insufficient stock') ||
+    text.includes('disponible:') && text.includes('requerido:')
+  );
+}
 
 async function processCreateSale(op) {
   const payload = op.payload || {};
@@ -29,10 +36,6 @@ export async function syncPendingOperations({ limit = 20 } = {}) {
   let failed = 0;
 
   for (const op of pending) {
-    if ((op.retryCount || 0) >= MAX_RETRIES) {
-      continue;
-    }
-
     try {
       await markPendingOpProcessing(op.opId);
 
@@ -47,7 +50,11 @@ export async function syncPendingOperations({ limit = 20 } = {}) {
 
       processed += 1;
     } catch (error) {
-      await markPendingOpFailed(op.opId, error?.message || 'Error de sincronizacion');
+      const baseMessage = error?.message || 'Error de sincronizacion';
+      const taggedMessage = isNonRetriableSyncError(baseMessage)
+        ? `NO_RETRY:${baseMessage}`
+        : baseMessage;
+      await markPendingOpFailed(op.opId, taggedMessage);
       failed += 1;
     }
   }

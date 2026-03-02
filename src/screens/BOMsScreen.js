@@ -2,11 +2,14 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import { listBoms } from '../services/inventoryCatalog.service';
 
 const TYPE_FILTERS = ['', 'product', 'variant'];
 
 export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [search, setSearch] = useState('');
 
   const {
@@ -38,18 +41,18 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
   });
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.toolbar}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isLightTheme && styles.searchInputLight]}
           value={search}
           onChangeText={setSearch}
           placeholder="Buscar BOM"
           placeholderTextColor="#64748b"
           onSubmitEditing={() => updateFilters({ search })}
         />
-        <Pressable style={styles.searchBtn} onPress={() => updateFilters({ search })}>
-          <Text style={styles.searchBtnText}>Buscar</Text>
+        <Pressable style={[styles.searchBtn, isLightTheme && styles.searchBtnLight]} onPress={() => updateFilters({ search })}>
+          <Text style={[styles.searchBtnText, isLightTheme && styles.searchBtnTextLight]}>Buscar</Text>
         </Pressable>
       </View>
 
@@ -61,10 +64,24 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
             return (
               <Pressable
                 key={label}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isLightTheme && styles.filterChipLight,
+                  active && styles.filterChipActive,
+                  active && isLightTheme && styles.filterChipActiveLight,
+                ]}
                 onPress={() => updateFilters({ type })}
               >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isLightTheme && styles.filterChipTextLight,
+                    active && styles.filterChipTextActive,
+                    active && isLightTheme && styles.filterChipTextActiveLight,
+                  ]}
+                >
+                  {label}
+                </Text>
               </Pressable>
             );
           })}
@@ -72,6 +89,7 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Listas de Materiales (BOMs)"
         loading={loading}
         error={error}
@@ -87,9 +105,9 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
             : null
         }
         renderItem={(item) => (
-          <View key={item.bom_id} style={styles.card}>
-            <Text style={styles.title}>{item.bom_name || 'BOM sin nombre'}</Text>
-            <Text style={styles.meta}>
+          <View key={item.bom_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.bom_name || 'BOM sin nombre'}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
               {item.product
                 ? `Producto: ${item.product.name}`
                 : item.variant
@@ -97,17 +115,17 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
                   : 'Sin destino'}
             </Text>
             <View style={styles.badgesRow}>
-              <View style={[styles.badge, { borderColor: '#0ea5e9' }]}>
-                <Text style={styles.badgeText}>{(item.bom_components || []).length} componente(s)</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{(item.bom_components || []).length} componente(s)</Text>
               </View>
-              <View style={[styles.badge, { borderColor: '#a78bfa' }]}>
-                <Text style={styles.badgeText}>Version {item.version || 1}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Version {item.version || 1}</Text>
               </View>
-              <View style={[styles.badge, { borderColor: item.is_active ? '#16a34a' : '#ef4444' }]}>
-                <Text style={styles.badgeText}>{item.is_active ? 'Activo' : 'Inactivo'}</Text>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: item.is_active ? '#16a34a' : '#ef4444' }]}>
+                <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.is_active ? 'Activo' : 'Inactivo'}</Text>
               </View>
             </View>
-            {item.notes ? <Text style={styles.note}>{item.notes}</Text> : null}
+            {item.notes ? <Text style={[styles.note, isLightTheme && styles.noteLight]}>{item.notes}</Text> : null}
           </View>
         )}
       />
@@ -117,6 +135,7 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -128,6 +147,11 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     paddingHorizontal: 10,
   },
+  searchInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+  },
   searchBtn: {
     backgroundColor: '#1e40af',
     borderRadius: 8,
@@ -135,7 +159,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  searchBtnLight: { backgroundColor: '#1d4ed8' },
   searchBtnText: { color: '#dbeafe', fontWeight: '700' },
+  searchBtnTextLight: { color: '#eff6ff' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -147,8 +173,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActiveLight: { color: '#0369a1' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -157,8 +187,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -167,6 +200,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     backgroundColor: '#0f172a',
   },
+  badgeLight: { backgroundColor: '#f8fafc' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  badgeTextLight: { color: '#334155' },
   note: { color: '#94a3b8', marginTop: 8, fontSize: 12 },
+  noteLight: { color: '#64748b' },
 });

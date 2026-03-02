@@ -8,15 +8,18 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useThemeMode } from '../lib/themeMode';
 import {
   createSale,
   getCurrentUserOpenSession,
   getPaymentMethodsForDropdown,
   getTaxInfoForVariant,
   searchCustomers,
+  searchCustomersOffline,
   searchVariantsOffline,
   searchVariants,
   warmPosCatalog,
+  warmCustomersCatalog,
 } from '../services/pos.service';
 import { enqueuePendingOp, getPendingOpsCount } from '../storage/sqlite/database';
 import { getOrCreateDeviceId } from '../services/device.service';
@@ -86,6 +89,8 @@ export default function PointOfSaleScreen({
   onPendingOpsChange,
   onSaleCompleted,
 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [loadingInit, setLoadingInit] = useState(true);
   const [search, setSearch] = useState('');
   const [searchingProducts, setSearchingProducts] = useState(false);
@@ -179,8 +184,8 @@ export default function PointOfSaleScreen({
         if (!tenantId || !userId) return;
 
         const [pm, session] = await Promise.all([
-          getPaymentMethodsForDropdown(tenantId),
-          getCurrentUserOpenSession(tenantId, userId),
+          getPaymentMethodsForDropdown(tenantId, { offlineMode }),
+          getCurrentUserOpenSession(tenantId, userId, { offlineMode }),
         ]);
 
         if (!active) return;
@@ -195,7 +200,12 @@ export default function PointOfSaleScreen({
           setCurrentSession(session.data);
         }
 
-        await warmPosCatalog(tenantId, session?.data?.cash_register?.location_id || null);
+        if (!offlineMode) {
+          await Promise.all([
+            warmPosCatalog(tenantId, session?.data?.cash_register?.location_id || null),
+            warmCustomersCatalog(tenantId),
+          ]);
+        }
       } finally {
         if (active) setLoadingInit(false);
       }
@@ -205,7 +215,7 @@ export default function PointOfSaleScreen({
     return () => {
       active = false;
     };
-  }, [tenant?.tenant_id, userProfile?.user_id]);
+  }, [tenant?.tenant_id, userProfile?.user_id, offlineMode]);
 
   useEffect(() => {
     if (!search || search.length < 2) {
@@ -217,7 +227,10 @@ export default function PointOfSaleScreen({
     const t = setTimeout(async () => {
       setSearchingProducts(true);
       const tenantId = tenant?.tenant_id;
-      if (!tenantId) return;
+      if (!tenantId) {
+        if (active) setSearchingProducts(false);
+        return;
+      }
       const locationId = currentSession?.cash_register?.location_id || null;
       const r = offlineMode
         ? await searchVariantsOffline(tenantId, search, 20, locationId)
@@ -235,7 +248,7 @@ export default function PointOfSaleScreen({
   }, [search, tenant?.tenant_id, currentSession?.cash_register?.location_id, offlineMode]);
 
   useEffect(() => {
-    if (!searchCustomer || searchCustomer.length < 2 || offlineMode) {
+    if (!searchCustomer || searchCustomer.length < 2) {
       setCustomers([]);
       return;
     }
@@ -244,8 +257,13 @@ export default function PointOfSaleScreen({
     const t = setTimeout(async () => {
       setSearchingCustomers(true);
       const tenantId = tenant?.tenant_id;
-      if (!tenantId) return;
-      const r = await searchCustomers(tenantId, searchCustomer, 20);
+      if (!tenantId) {
+        if (active) setSearchingCustomers(false);
+        return;
+      }
+      const r = offlineMode
+        ? await searchCustomersOffline(tenantId, searchCustomer, 20)
+        : await searchCustomers(tenantId, searchCustomer, 20);
       if (active) {
         setCustomers(r.success ? r.data : []);
         setSearchingCustomers(false);
@@ -535,17 +553,17 @@ export default function PointOfSaleScreen({
 
   if (loadingInit) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, isLightTheme && styles.centeredLight]}>
         <ActivityIndicator size="large" color="#38bdf8" />
-        <Text style={styles.centerText}>Inicializando POS...</Text>
+        <Text style={[styles.centerText, isLightTheme && styles.centerTextLight]}>Inicializando POS...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Punto de Venta</Text>
+        <Text style={[styles.title, isLightTheme && styles.titleLight]}>Punto de Venta</Text>
         <Text style={currentSession ? styles.sessionOk : styles.sessionWarn}>
           {currentSession
             ? `Caja: ${currentSession?.cash_register?.name || 'Activa'}`
@@ -553,77 +571,77 @@ export default function PointOfSaleScreen({
         </Text>
       </View>
 
-      <View style={styles.panel}>
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
         <TextInput
           value={search}
           onChangeText={setSearch}
           placeholder="Buscar producto (codigo, SKU o nombre)"
           placeholderTextColor="#64748b"
-          style={styles.input}
+          style={[styles.input, isLightTheme && styles.inputLight]}
         />
-        {searchingProducts ? <Text style={styles.metaText}>Buscando...</Text> : null}
+        {searchingProducts ? <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Buscando...</Text> : null}
         {results.slice(0, 8).map((item) => (
           <Pressable
             key={item.variant_id}
-            style={styles.resultRow}
+            style={[styles.resultRow, isLightTheme && styles.resultRowLight]}
             onPress={() => addToCart(item)}
           >
-            <Text style={styles.resultTitle}>
+            <Text style={[styles.resultTitle, isLightTheme && styles.resultTitleLight]}>
               {item.product?.name} {item.variant_name ? `- ${item.variant_name}` : ''}
             </Text>
-            <Text style={styles.resultMeta}>
+            <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>
               {item.sku} · {formatMoney(item.price)} · Stock: {item.stock_available ?? '-'}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.sectionTitle}>Cliente (opcional)</Text>
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Cliente (opcional)</Text>
         <TextInput
           value={searchCustomer}
           onChangeText={setSearchCustomer}
           placeholder="Buscar cliente"
           placeholderTextColor="#64748b"
-          style={styles.input}
+          style={[styles.input, isLightTheme && styles.inputLight]}
         />
-        {searchingCustomers ? <Text style={styles.metaText}>Buscando cliente...</Text> : null}
+        {searchingCustomers ? <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Buscando cliente...</Text> : null}
         {customers.slice(0, 6).map((c) => (
           <Pressable
             key={c.customer_id}
-            style={styles.resultRow}
+            style={[styles.resultRow, isLightTheme && styles.resultRowLight]}
             onPress={() => {
               setSelectedCustomer(c);
               setSearchCustomer(c.full_name || '');
               setCustomers([]);
             }}
           >
-            <Text style={styles.resultTitle}>{c.full_name}</Text>
-            <Text style={styles.resultMeta}>{c.document || c.phone || '-'}</Text>
+            <Text style={[styles.resultTitle, isLightTheme && styles.resultTitleLight]}>{c.full_name}</Text>
+            <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>{c.document || c.phone || '-'}</Text>
           </Pressable>
         ))}
       </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.sectionTitle}>Carrito</Text>
-        {cart.length === 0 ? <Text style={styles.metaText}>Agrega productos para iniciar.</Text> : null}
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Carrito</Text>
+        {cart.length === 0 ? <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Agrega productos para iniciar.</Text> : null}
         {cart.map((line, index) => (
-          <View key={line.variant_id} style={styles.lineCard}>
+          <View key={line.variant_id} style={[styles.lineCard, isLightTheme && styles.lineCardLight]}>
             <View style={styles.lineTop}>
-              <Text style={styles.lineTitle}>{line.productName}</Text>
+              <Text style={[styles.lineTitle, isLightTheme && styles.lineTitleLight]}>{line.productName}</Text>
               <Pressable onPress={() => removeLine(index)}>
                 <Text style={styles.removeBtn}>x</Text>
               </Pressable>
             </View>
-            <Text style={styles.resultMeta}>{line.variantName || 'Predeterminado'} · {line.sku}</Text>
+            <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>{line.variantName || 'Predeterminado'} · {line.sku}</Text>
             <View style={styles.lineControls}>
               <TextInput
                 value={String(line.quantity)}
                 onChangeText={(v) => updateLineQuantity(index, v)}
                 keyboardType="numeric"
-                style={styles.qtyInput}
+                style={[styles.qtyInput, isLightTheme && styles.qtyInputLight]}
               />
-              <Text style={styles.linePrice}>{formatMoney(line.unit_price)}</Text>
+              <Text style={[styles.linePrice, isLightTheme && styles.linePriceLight]}>{formatMoney(line.unit_price)}</Text>
               {isAdmin ? (
                 <View style={styles.discountBox}>
                   <View style={styles.discountTypeRow}>
@@ -631,55 +649,57 @@ export default function PointOfSaleScreen({
                       onPress={() => toggleLineDiscountType(index, 'AMOUNT')}
                       style={[
                         styles.discountTypeBtn,
+                        isLightTheme && styles.discountTypeBtnLight,
                         line.discount_line_type === 'AMOUNT' && styles.discountTypeBtnActive,
                       ]}
                     >
-                      <Text style={styles.discountTypeText}>$</Text>
+                      <Text style={[styles.discountTypeText, isLightTheme && styles.discountTypeTextLight]}>$</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => toggleLineDiscountType(index, 'PERCENT')}
                       style={[
                         styles.discountTypeBtn,
+                        isLightTheme && styles.discountTypeBtnLight,
                         line.discount_line_type === 'PERCENT' && styles.discountTypeBtnActive,
                       ]}
                     >
-                      <Text style={styles.discountTypeText}>%</Text>
+                      <Text style={[styles.discountTypeText, isLightTheme && styles.discountTypeTextLight]}>%</Text>
                     </Pressable>
                   </View>
                   <TextInput
                     value={String(line.discount_line || 0)}
                     onChangeText={(v) => updateLineDiscount(index, v)}
                     keyboardType="numeric"
-                    style={styles.discountInput}
+                    style={[styles.discountInput, isLightTheme && styles.discountInputLight]}
                   />
                 </View>
               ) : null}
             </View>
-            <Text style={styles.lineTotal}>Total linea: {formatMoney(line.line_total)}</Text>
+            <Text style={[styles.lineTotal, isLightTheme && styles.lineTotalLight]}>Total linea: {formatMoney(line.line_total)}</Text>
           </View>
         ))}
       </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.sectionTitle}>Totales</Text>
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Subtotal</Text><Text style={styles.totalValue}>{formatMoney(totals.subtotal)}</Text></View>
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Totales</Text>
+        <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Subtotal</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.subtotal)}</Text></View>
         {totals.discount > 0 ? (
-          <View style={styles.totalRow}><Text style={styles.totalLabel}>Descuento</Text><Text style={styles.totalValue}>-{formatMoney(totals.discount)}</Text></View>
+          <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Descuento</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>-{formatMoney(totals.discount)}</Text></View>
         ) : null}
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>IVA</Text><Text style={styles.totalValue}>{formatMoney(totals.tax)}</Text></View>
+        <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>IVA</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.tax)}</Text></View>
         {totals.roundingAdjustment !== 0 ? (
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Ajuste redondeo</Text>
-            <Text style={styles.totalValue}>{formatMoney(totals.roundingAdjustment)}</Text>
+            <Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Ajuste redondeo</Text>
+            <Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.roundingAdjustment)}</Text>
           </View>
         ) : null}
-        <View style={styles.totalRowStrong}><Text style={styles.totalStrong}>TOTAL</Text><Text style={styles.totalStrongValue}>{formatMoney(totals.total)}</Text></View>
+        <View style={styles.totalRowStrong}><Text style={[styles.totalStrong, isLightTheme && styles.totalStrongLight]}>TOTAL</Text><Text style={styles.totalStrongValue}>{formatMoney(totals.total)}</Text></View>
       </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.sectionTitle}>Formas de Pago</Text>
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Formas de Pago</Text>
         {payments.map((p, i) => (
-          <View key={`payment-${i}`} style={styles.paymentRow}>
+          <View key={`payment-${i}`} style={[styles.paymentRow, isLightTheme && styles.paymentRowLight]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodScroller}>
               <View style={styles.methodRow}>
                 {paymentMethods.map((m) => (
@@ -688,7 +708,7 @@ export default function PointOfSaleScreen({
                     style={[styles.methodBtn, p.method === m.code && styles.methodBtnActive]}
                     onPress={() => updatePayment(i, { method: m.code })}
                   >
-                    <Text style={styles.methodBtnText}>{m.name}</Text>
+                    <Text style={[styles.methodBtnText, isLightTheme && styles.methodBtnTextLight]}>{m.name}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -697,7 +717,7 @@ export default function PointOfSaleScreen({
               value={String(p.amount || 0)}
               onChangeText={(v) => updatePayment(i, { amount: Number(v || 0) })}
               keyboardType="numeric"
-              style={styles.paymentInput}
+              style={[styles.paymentInput, isLightTheme && styles.paymentInputLight]}
             />
             <Pressable onPress={() => removePayment(i)} style={styles.paymentRemove}>
               <Text style={styles.removeBtn}>x</Text>
@@ -705,19 +725,19 @@ export default function PointOfSaleScreen({
           </View>
         ))}
         <Pressable onPress={addPayment} style={styles.addPaymentBtn}>
-          <Text style={styles.addPaymentText}>+ Agregar pago</Text>
+          <Text style={[styles.addPaymentText, isLightTheme && styles.addPaymentTextLight]}>+ Agregar pago</Text>
         </Pressable>
         {change > 0 ? <Text style={styles.okText}>Cambio: {formatMoney(change)}</Text> : null}
         {remaining > 0 ? <Text style={styles.warnText}>Falta: {formatMoney(remaining)}</Text> : null}
       </View>
 
-      <View style={styles.panel}>
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
         <TextInput
           value={saleNote}
           onChangeText={setSaleNote}
           placeholder="Nota (opcional)"
           placeholderTextColor="#64748b"
-          style={styles.input}
+          style={[styles.input, isLightTheme && styles.inputLight]}
         />
       </View>
 
@@ -751,15 +771,24 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     backgroundColor: '#0b0f14',
   },
+  containerLight: {
+    backgroundColor: '#f8fafc',
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0b0f14',
   },
+  centeredLight: {
+    backgroundColor: '#f8fafc',
+  },
   centerText: {
     marginTop: 10,
     color: '#cbd5e1',
+  },
+  centerTextLight: {
+    color: '#475569',
   },
   headerRow: {
     flexDirection: 'row',
@@ -771,6 +800,9 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 24,
     fontWeight: '700',
+  },
+  titleLight: {
+    color: '#0f172a',
   },
   sessionOk: {
     color: '#4ade80',
@@ -788,11 +820,18 @@ const styles = StyleSheet.create({
     borderColor: '#2a3240',
     padding: 10,
   },
+  panelLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   sectionTitle: {
     color: '#e2e8f0',
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 8,
+  },
+  sectionTitleLight: {
+    color: '#0f172a',
   },
   input: {
     borderWidth: 1,
@@ -804,24 +843,41 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     marginBottom: 6,
   },
+  inputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+  },
   metaText: {
     color: '#94a3b8',
     fontSize: 12,
+  },
+  metaTextLight: {
+    color: '#64748b',
   },
   resultRow: {
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#243041',
   },
+  resultRowLight: {
+    borderTopColor: '#e2e8f0',
+  },
   resultTitle: {
     color: '#f8fafc',
     fontSize: 14,
     fontWeight: '600',
   },
+  resultTitleLight: {
+    color: '#0f172a',
+  },
   resultMeta: {
     color: '#94a3b8',
     fontSize: 12,
     marginTop: 2,
+  },
+  resultMetaLight: {
+    color: '#64748b',
   },
   lineCard: {
     marginBottom: 8,
@@ -830,6 +886,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 8,
     backgroundColor: '#111827',
+  },
+  lineCardLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fafc',
   },
   lineTop: {
     flexDirection: 'row',
@@ -842,6 +902,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     paddingRight: 8,
+  },
+  lineTitleLight: {
+    color: '#0f172a',
   },
   removeBtn: {
     color: '#f87171',
@@ -864,9 +927,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0f172a',
   },
+  qtyInputLight: {
+    borderColor: '#cbd5e1',
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
   linePrice: {
     color: '#cbd5e1',
     width: 96,
+  },
+  linePriceLight: {
+    color: '#475569',
   },
   discountBox: {
     flexDirection: 'row',
@@ -886,6 +957,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0f172a',
   },
+  discountTypeBtnLight: {
+    backgroundColor: '#ffffff',
+  },
   discountTypeBtnActive: {
     backgroundColor: '#2563eb',
   },
@@ -893,6 +967,9 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 12,
     fontWeight: '700',
+  },
+  discountTypeTextLight: {
+    color: '#334155',
   },
   discountInput: {
     borderWidth: 1,
@@ -904,10 +981,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     minWidth: 62,
   },
+  discountInputLight: {
+    borderColor: '#cbd5e1',
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
   lineTotal: {
     color: '#e2e8f0',
     fontWeight: '700',
     marginTop: 8,
+  },
+  lineTotalLight: {
+    color: '#0f172a',
   },
   totalRow: {
     flexDirection: 'row',
@@ -925,13 +1010,22 @@ const styles = StyleSheet.create({
   totalLabel: {
     color: '#cbd5e1',
   },
+  totalLabelLight: {
+    color: '#475569',
+  },
   totalValue: {
     color: '#f8fafc',
+  },
+  totalValueLight: {
+    color: '#0f172a',
   },
   totalStrong: {
     color: '#f8fafc',
     fontSize: 24,
     fontWeight: '800',
+  },
+  totalStrongLight: {
+    color: '#0f172a',
   },
   totalStrongValue: {
     color: '#38bdf8',
@@ -946,6 +1040,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     backgroundColor: '#0f172a',
+  },
+  paymentRowLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fafc',
   },
   methodScroller: {
     marginBottom: 8,
@@ -969,6 +1067,9 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 12,
   },
+  methodBtnTextLight: {
+    color: '#334155',
+  },
   paymentInput: {
     borderWidth: 1,
     borderColor: '#475569',
@@ -977,6 +1078,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     backgroundColor: '#111827',
+  },
+  paymentInputLight: {
+    borderColor: '#cbd5e1',
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
   },
   paymentRemove: {
     position: 'absolute',
@@ -994,6 +1100,9 @@ const styles = StyleSheet.create({
   addPaymentText: {
     color: '#e2e8f0',
     fontWeight: '700',
+  },
+  addPaymentTextLight: {
+    color: '#334155',
   },
   okText: {
     color: '#4ade80',

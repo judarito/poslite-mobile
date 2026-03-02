@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useThemeMode } from '../lib/themeMode';
 import { getSimpleCache, saveSimpleCache } from '../services/offlineCache.service';
 import { listBulkImportErrors, listBulkImports } from '../services/bulkImports.service';
 
@@ -13,6 +14,8 @@ function cacheKey(tenantId, type) {
 }
 
 export default function BulkImportsScreen({ tenant, offlineMode }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [selectedType, setSelectedType] = useState('product_variants');
   const [rows, setRows] = useState([]);
   const [errors, setErrors] = useState([]);
@@ -93,9 +96,9 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Carga Masiva</Text>
-      <Text style={styles.meta}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
+      <Text style={[styles.title, isLightTheme && styles.titleLight]}>Carga Masiva</Text>
+      <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
         En mobile se habilita historial y seguimiento. La carga de archivo XLSX se mantiene en web.
       </Text>
 
@@ -105,10 +108,10 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
           return (
             <Pressable
               key={item.value}
-              style={[styles.typeBtn, active && styles.typeBtnActive]}
+              style={[styles.typeBtn, isLightTheme && styles.typeBtnLight, active && styles.typeBtnActive]}
               onPress={() => setSelectedType(item.value)}
             >
-              <Text style={[styles.typeBtnText, active && styles.typeBtnTextActive]}>{item.label}</Text>
+              <Text style={[styles.typeBtnText, isLightTheme && styles.typeBtnTextLight, active && styles.typeBtnTextActive]}>{item.label}</Text>
             </Pressable>
           );
         })}
@@ -119,17 +122,17 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
       </Pressable>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {cacheAt ? <Text style={styles.cacheText}>Cache: {new Date(cacheAt).toLocaleString()}</Text> : null}
+      {cacheAt ? <Text style={[styles.cacheText, isLightTheme && styles.cacheTextLight]}>Cache: {new Date(cacheAt).toLocaleString()}</Text> : null}
 
       <ScrollView style={styles.list}>
-        {rows.length === 0 ? <Text style={styles.empty}>Sin importaciones para mostrar.</Text> : null}
+        {rows.length === 0 ? <Text style={[styles.empty, isLightTheme && styles.emptyLight]}>Sin importaciones para mostrar.</Text> : null}
         {rows.map((row) => (
-          <View key={row.import_id} style={styles.card}>
-            <Text style={styles.cardTitle}>{row.file_name || 'Archivo sin nombre'}</Text>
-            <Text style={styles.cardMeta}>Estado: {row.status || '-'}</Text>
-            <Text style={styles.cardMeta}>Procesados: {row.processed_count || 0}</Text>
-            <Text style={styles.cardMeta}>Errores: {row.error_count || 0}</Text>
-            <Text style={styles.cardMeta}>
+          <View key={row.import_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.cardTitle, isLightTheme && styles.cardTitleLight]}>{row.file_name || 'Archivo sin nombre'}</Text>
+            <Text style={[styles.cardMeta, isLightTheme && styles.cardMetaLight]}>Estado: {row.status || '-'}</Text>
+            <Text style={[styles.cardMeta, isLightTheme && styles.cardMetaLight]}>Procesados: {row.processed_count || 0}</Text>
+            <Text style={[styles.cardMeta, isLightTheme && styles.cardMetaLight]}>Errores: {row.error_count || 0}</Text>
+            <Text style={[styles.cardMeta, isLightTheme && styles.cardMetaLight]}>
               {row.created_at ? new Date(row.created_at).toLocaleString() : 'Sin fecha'}
             </Text>
 
@@ -146,14 +149,14 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
 
       <Modal visible={errorsModal} transparent animationType="slide" onRequestClose={() => setErrorsModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
-            <Text style={styles.modalTitle}>Errores de importacion</Text>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
+            <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Errores de importacion</Text>
             <ScrollView>
-              {errors.length === 0 ? <Text style={styles.empty}>No hay errores para este archivo.</Text> : null}
+              {errors.length === 0 ? <Text style={[styles.empty, isLightTheme && styles.emptyLight]}>No hay errores para este archivo.</Text> : null}
               {errors.map((e) => (
-                <View key={e.error_id} style={styles.errorCard}>
-                  <Text style={styles.errorLine}>Fila: {e.row_number ?? '-'}</Text>
-                  <Text style={styles.errorLine}>Detalle: {e.detail || '-'}</Text>
+                <View key={e.error_id} style={[styles.errorCard, isLightTheme && styles.errorCardLight]}>
+                  <Text style={[styles.errorLine, isLightTheme && styles.errorLineLight]}>Fila: {e.row_number ?? '-'}</Text>
+                  <Text style={[styles.errorLine, isLightTheme && styles.errorLineLight]}>Detalle: {e.detail || '-'}</Text>
                 </View>
               ))}
             </ScrollView>
@@ -169,8 +172,11 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700' },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#94a3b8', marginTop: 6, marginBottom: 10 },
+  metaLight: { color: '#475569' },
   typeRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   typeBtn: {
     flex: 1,
@@ -181,8 +187,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
   },
+  typeBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   typeBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   typeBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  typeBtnTextLight: { color: '#334155' },
   typeBtnTextActive: { color: '#bae6fd' },
   refreshBtn: {
     backgroundColor: '#1e40af',
@@ -194,8 +202,10 @@ const styles = StyleSheet.create({
   refreshBtnText: { color: '#dbeafe', fontWeight: '700' },
   error: { color: '#f87171', marginBottom: 8 },
   cacheText: { color: '#64748b', fontSize: 12, marginBottom: 8 },
+  cacheTextLight: { color: '#475569' },
   list: { flex: 1 },
   empty: { color: '#94a3b8', textAlign: 'center', marginTop: 12 },
+  emptyLight: { color: '#64748b' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -204,8 +214,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   cardTitle: { color: '#f8fafc', fontWeight: '700', fontSize: 14 },
+  cardTitleLight: { color: '#0f172a' },
   cardMeta: { color: '#cbd5e1', marginTop: 3, fontSize: 13 },
+  cardMetaLight: { color: '#475569' },
   detailBtn: {
     marginTop: 10,
     backgroundColor: '#334155',
@@ -223,7 +236,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#f8fafc' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  modalTitleLight: { color: '#0f172a' },
   errorCard: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -232,7 +247,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginBottom: 8,
   },
+  errorCardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   errorLine: { color: '#e2e8f0', fontSize: 13 },
+  errorLineLight: { color: '#334155' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',

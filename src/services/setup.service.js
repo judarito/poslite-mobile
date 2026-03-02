@@ -56,6 +56,12 @@ const DEFAULT_TENANT = {
   city_code: '',
 };
 
+function parseMissingColumn(errorMessage = '') {
+  const text = String(errorMessage || '');
+  const match = text.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || null;
+}
+
 function normalizeTenantSettings(data = {}) {
   const raw = { ...DEFAULT_SETTINGS, ...(data || {}) };
   const pageSize = Number(raw.default_page_size || DEFAULT_PAGE_SIZE);
@@ -195,20 +201,52 @@ export async function saveTenantConfig(tenantId, payload) {
       updated_at: new Date().toISOString(),
     };
 
-    const [{ data: settingsSaved, error: settingsError }, { data: tenantSaved, error: tenantError }] =
-      await Promise.all([
-        supabase
-          .from('tenant_settings')
-          .upsert(settingsBody, { onConflict: 'tenant_id' })
-          .select('*')
-          .single(),
-        supabase
-          .from('tenants')
-          .update(tenantBody)
-          .eq('tenant_id', tenantId)
-          .select('*')
-          .single(),
-      ]);
+    // Compatibilidad con instalaciones donde faltan columnas nuevas en tenant_settings.
+    // Si PostgREST devuelve "Could not find the 'x' column", quitamos ese campo y reintentamos.
+    const settingsPayload = { ...settingsBody };
+    let settingsSaved = null;
+    let settingsError = null;
+    const missingColumns = new Set();
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const response = await supabase
+        .from('tenant_settings')
+        .upsert(settingsPayload, { onConflict: 'tenant_id' })
+        .select('*')
+        .single();
+      settingsSaved = response.data || null;
+      settingsError = response.error || null;
+      if (!settingsError) break;
+
+      const missingColumn = parseMissingColumn(settingsError.message);
+      if (!missingColumn || missingColumns.has(missingColumn) || !(missingColumn in settingsPayload)) {
+        break;
+      }
+      missingColumns.add(missingColumn);
+      delete settingsPayload[missingColumn];
+    }
+
+    const tenantPayload = { ...tenantBody };
+    let tenantSaved = null;
+    let tenantError = null;
+    const tenantMissingColumns = new Set();
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const response = await supabase
+        .from('tenants')
+        .update(tenantPayload)
+        .eq('tenant_id', tenantId)
+        .select('*')
+        .single();
+      tenantSaved = response.data || null;
+      tenantError = response.error || null;
+      if (!tenantError) break;
+
+      const missingColumn = parseMissingColumn(tenantError.message);
+      if (!missingColumn || tenantMissingColumns.has(missingColumn) || !(missingColumn in tenantPayload)) {
+        break;
+      }
+      tenantMissingColumns.add(missingColumn);
+      delete tenantPayload[missingColumn];
+    }
 
     if (settingsError) throw settingsError;
     if (tenantError) throw tenantError;

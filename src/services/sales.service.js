@@ -1,4 +1,11 @@
 import { supabase } from '../lib/supabase';
+import {
+  discardPendingOp,
+  getPendingSaleOpById,
+  getPendingSaleOps,
+  retryPendingOp,
+  updatePendingOpPayload,
+} from '../storage/sqlite/database';
 
 export async function getSales(tenantId, page = 1, pageSize = 20, filters = {}) {
   if (!tenantId) {
@@ -42,6 +49,217 @@ export async function getSales(tenantId, page = 1, pageSize = 20, filters = {}) 
     return { success: true, data: data || [], total: count || 0 };
   } catch (error) {
     return { success: false, error: error.message, data: [], total: 0 };
+  }
+}
+
+export async function getPendingOfflineSales(tenantId, filters = {}) {
+  if (!tenantId) return { success: true, data: [] };
+  try {
+    const rows = await getPendingSaleOps(tenantId, 300);
+
+    const fromDate = filters.from_date ? new Date(filters.from_date) : null;
+    const toDate = filters.to_date ? new Date(filters.to_date) : null;
+    const statusFilter = String(filters.status || '');
+    const locationFilter = String(filters.location_id || '');
+
+    const mapped = rows
+      .map((op) => {
+        const payload = op.payload || {};
+        const payments = Array.isArray(payload.payments) ? payload.payments : [];
+        const total = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        const status = op.status === 'FAILED' ? 'FAILED_SYNC' : 'PENDING_SYNC';
+        const rawSyncError = op.lastError || null;
+        const syncError = rawSyncError?.startsWith('NO_RETRY:')
+          ? rawSyncError.slice('NO_RETRY:'.length)
+          : rawSyncError;
+        return {
+          sale_id: `offline:${op.opId}`,
+          sale_number: `OFF-${String(op.opId || '').slice(-6).toUpperCase()}`,
+          sold_at: op.createdAt,
+          status,
+          subtotal: total,
+          tax_total: 0,
+          discount_total: 0,
+          total,
+          location_id: payload.location_id || null,
+          location: payload.location_id
+            ? { name: `Sede (${String(payload.location_id).slice(0, 8)})` }
+            : { name: 'Sin sede' },
+          customer: payload.customer_id
+            ? { customer_id: payload.customer_id, full_name: 'Cliente pendiente sync' }
+            : null,
+          sold_by_user: null,
+          is_local_pending: true,
+          sync_error: syncError,
+          operation_id: op.opId,
+          local_payload: payload,
+        };
+      })
+      .filter((sale) => {
+        if (statusFilter && sale.status !== statusFilter) return false;
+        if (locationFilter && sale.location_id !== locationFilter) return false;
+        const soldAt = new Date(sale.sold_at);
+        if (fromDate && soldAt < fromDate) return false;
+        if (toDate && soldAt > toDate) return false;
+        return true;
+      });
+
+    return { success: true, data: mapped };
+  } catch (error) {
+    return { success: false, error: error.message, data: [] };
+  }
+}
+
+export async function retryPendingOfflineSale(operationId) {
+  if (!operationId) return { success: false, error: 'operationId es requerido' };
+  try {
+    await retryPendingOp(operationId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function discardPendingOfflineSale(operationId) {
+  if (!operationId) return { success: false, error: 'operationId es requerido' };
+  try {
+    await discardPendingOp(operationId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getPendingOfflineSaleByOperationId(operationId) {
+  if (!operationId) return { success: true, data: null };
+  try {
+    const row = await getPendingSaleOpById(operationId);
+    if (!row) return { success: true, data: null };
+    const rawSyncError = row.lastError || null;
+    const syncError = rawSyncError?.startsWith('NO_RETRY:')
+      ? rawSyncError.slice('NO_RETRY:'.length)
+      : rawSyncError;
+    return {
+      success: true,
+      data: {
+        operation_id: row.opId,
+        status: row.status === 'FAILED' ? 'FAILED_SYNC' : 'PENDING_SYNC',
+        sync_error: syncError,
+        payload: row.payload || {},
+      },
+    };
+  } catch (error) {
+    return { success: false, error: error.message, data: null };
+  }
+}
+
+export async function estimatePendingSaleTotal(tenantId, lines = []) {
+  if (!tenantId) return { success: false, error: 'tenantId es requerido', total: 0 };
+  try {
+    let total = 0;
+    for (const line of lines) {
+      const qty = Number(line.qty || 0);
+      const unitPrice = Number(line.unit_price || 0);
+      const discount = Number(line.discount || 0);
+      if (!qty || qty <= 0) continue;
+      const base = Math.max(0, qty * unitPrice - discount);
+
+      let rate = 0;
+      if (line.variant_id) {
+        const { data, error } = await supabase.rpc('fn_get_tax_info_for_variant', {
+          p_tenant: tenantId,
+          p_variant: line.variant_id,
+        });
+        if (!error) rate = Number(data?.rate || 0);
+      }
+
+      const lineTotal = Math.round(base + base * rate);
+      total += lineTotal;
+    }
+    return { success: true, total: Math.round(total) };
+  } catch (error) {
+    return { success: false, error: error.message, total: 0 };
+  }
+}
+
+export async function updatePendingOfflineSalePayload(operationId, payload) {
+  if (!operationId) return { success: false, error: 'operationId es requerido' };
+  try {
+    await updatePendingOpPayload(operationId, payload);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function validatePendingOfflineSaleStock(tenantId, payload = {}) {
+  if (!tenantId) return { success: false, error: 'tenantId es requerido', ok: false, issues: [] };
+  const locationId = payload?.location_id || null;
+  const lines = Array.isArray(payload?.lines) ? payload.lines : [];
+
+  if (!locationId) {
+    return {
+      success: true,
+      ok: false,
+      issues: [{ message: 'La venta offline no tiene sede (location_id).' }],
+    };
+  }
+
+  const requiredMap = new Map();
+  lines.forEach((line) => {
+    const variantId = line?.variant_id;
+    const qty = Number(line?.qty || 0);
+    if (!variantId || qty <= 0) return;
+    requiredMap.set(variantId, (requiredMap.get(variantId) || 0) + qty);
+  });
+
+  const variantIds = Array.from(requiredMap.keys());
+  if (!variantIds.length) {
+    return { success: true, ok: false, issues: [{ message: 'La venta offline no tiene lineas validas.' }] };
+  }
+
+  try {
+    const [{ data: stocks, error: stockErr }, { data: variants, error: variantErr }] = await Promise.all([
+      supabase
+        .from('stock_balances')
+        .select('variant_id,on_hand,reserved')
+        .eq('tenant_id', tenantId)
+        .eq('location_id', locationId)
+        .in('variant_id', variantIds),
+      supabase
+        .from('product_variants')
+        .select('variant_id,sku,variant_name,product:product_id(name)')
+        .eq('tenant_id', tenantId)
+        .in('variant_id', variantIds),
+    ]);
+
+    if (stockErr) throw stockErr;
+    if (variantErr) throw variantErr;
+
+    const stockMap = new Map((stocks || []).map((s) => [s.variant_id, s]));
+    const variantMap = new Map((variants || []).map((v) => [v.variant_id, v]));
+    const issues = [];
+
+    variantIds.forEach((variantId) => {
+      const required = Number(requiredMap.get(variantId) || 0);
+      const stock = stockMap.get(variantId);
+      const available = (Number(stock?.on_hand || 0) - Number(stock?.reserved || 0));
+      if (available < required) {
+        const v = variantMap.get(variantId);
+        issues.push({
+          variant_id: variantId,
+          sku: v?.sku || '',
+          variant_name: v?.variant_name || '',
+          product_name: v?.product?.name || '',
+          available,
+          required,
+        });
+      }
+    });
+
+    return { success: true, ok: issues.length === 0, issues };
+  } catch (error) {
+    return { success: false, error: error.message, ok: false, issues: [] };
   }
 }
 

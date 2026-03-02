@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
 import {
   createThirdParty,
   listThirdParties,
@@ -81,6 +82,8 @@ function typeHelpText(type) {
 }
 
 export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -246,10 +249,10 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.toolbar}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isLightTheme && styles.searchInputLight]}
           value={search}
           onChangeText={setSearch}
           onSubmitEditing={() => updateFilters({ search })}
@@ -268,16 +271,17 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
           return (
             <Pressable
               key={label}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
               onPress={() => updateFilters({ type: value })}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Terceros"
         loading={loading}
         error={error}
@@ -293,14 +297,14 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
             : null
         }
         renderItem={(item) => (
-          <View key={item.third_party_id} style={styles.card}>
-            <Text style={styles.name}>{item.legal_name}</Text>
-            <Text style={styles.meta}>
+          <View key={item.third_party_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.name, isLightTheme && styles.nameLight]}>{item.legal_name}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
               {[item.document_type, item.document_number ? `${item.document_number}${item.dv ? `-${item.dv}` : ''}` : null]
                 .filter(Boolean)
                 .join(' ')}
             </Text>
-            <Text style={styles.meta}>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
               {[item.phone, item.email].filter(Boolean).join(' · ') || 'Sin datos de contacto'}
             </Text>
 
@@ -335,40 +339,40 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
             style={styles.modalAvoider}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View style={styles.modalBody}>
+            <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
               <ScrollView
                 style={styles.modalScroll}
                 contentContainerStyle={styles.modalScrollContent}
                 keyboardShouldPersistTaps="handled"
               >
-                <Text style={styles.modalTitle}>{form.third_party_id ? 'Editar tercero' : 'Nuevo tercero'}</Text>
+                <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>{form.third_party_id ? 'Editar tercero' : 'Nuevo tercero'}</Text>
 
-              <Text style={styles.groupTitle}>Tipo de tercero</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Tipo de tercero</Text>
               <View style={styles.toggleRow}>
                 {['customer', 'supplier', 'both'].map((type) => (
                   <Pressable
                     key={type}
-                    style={[styles.toggleBtn, form.type === type && styles.toggleBtnActive]}
+                    style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, form.type === type && styles.toggleBtnActive]}
                     onPress={() => setForm((prev) => ({ ...prev, type }))}
                   >
-                    <Text style={[styles.toggleBtnText, form.type === type && styles.toggleBtnTextActive]}>
+                    <Text style={[styles.toggleBtnText, isLightTheme && styles.toggleBtnTextLight, form.type === type && styles.toggleBtnTextActive]}>
                       {type === 'customer' ? 'Cliente' : type === 'supplier' ? 'Proveedor' : 'Ambos'}
                     </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.typeHint}>{typeHelpText(form.type)}</Text>
+              <Text style={[styles.typeHint, isLightTheme && styles.typeHintLight]}>{typeHelpText(form.type)}</Text>
 
-              <Text style={styles.groupTitle}>Identificacion</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Identificacion</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.legal_name}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, legal_name: v }))}
                 placeholder="Razon social / Nombre completo *"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.trade_name}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, trade_name: v }))}
                 placeholder="Nombre comercial"
@@ -381,10 +385,10 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                     return (
                       <Pressable
                         key={docType}
-                        style={[styles.methodChip, active && styles.methodChipActive]}
+                        style={[styles.methodChip, isLightTheme && styles.methodChipLight, active && styles.methodChipActive]}
                         onPress={() => setForm((prev) => ({ ...prev, document_type: docType }))}
                       >
-                        <Text style={[styles.methodChipText, active && styles.methodChipTextActive]}>{docType}</Text>
+                        <Text style={[styles.methodChipText, isLightTheme && styles.methodChipTextLight, active && styles.methodChipTextActive]}>{docType}</Text>
                       </Pressable>
                     );
                   })}
@@ -392,14 +396,14 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
               </ScrollView>
               <View style={styles.rowTwo}>
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.flexInput]}
                   value={form.document_number}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, document_number: v }))}
                   placeholder="Numero documento *"
                   placeholderTextColor="#64748b"
                 />
                 <TextInput
-                  style={[styles.input, styles.shortInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.shortInput]}
                   value={form.dv}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, dv: v }))}
                   placeholder="DV"
@@ -407,16 +411,16 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 />
               </View>
 
-              <Text style={styles.groupTitle}>Contacto</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Contacto</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.phone}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, phone: v }))}
                 placeholder="Telefono"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.email}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, email: v }))}
                 placeholder="Correo electronico"
@@ -424,7 +428,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 autoCapitalize="none"
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.fiscal_email}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, fiscal_email: v }))}
                 placeholder="Correo fiscal / facturacion"
@@ -432,17 +436,17 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 autoCapitalize="none"
               />
 
-              <Text style={styles.groupTitle}>Ubicacion</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Ubicacion</Text>
               <View style={styles.rowTwo}>
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.flexInput]}
                   value={form.department}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, department: v }))}
                   placeholder="Departamento"
                   placeholderTextColor="#64748b"
                 />
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.flexInput]}
                   value={form.city}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, city: v }))}
                   placeholder="Ciudad / Municipio"
@@ -450,14 +454,14 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 />
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.city_code}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, city_code: v }))}
                 placeholder="Codigo DANE municipio"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={[styles.input, { minHeight: 70 }]}
+                style={[styles.input, isLightTheme && styles.inputLight, { minHeight: 70 }]}
                 value={form.address_text}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, address_text: v }))}
                 placeholder="Direccion"
@@ -465,10 +469,10 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 multiline
               />
 
-              <Text style={styles.groupTitle}>Condiciones comerciales</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Condiciones comerciales</Text>
               <View style={styles.rowTwo}>
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.flexInput]}
                   value={form.max_credit_amount}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, max_credit_amount: v }))}
                   placeholder="Cupo de credito"
@@ -476,7 +480,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                   keyboardType="numeric"
                 />
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, isLightTheme && styles.inputLight, styles.flexInput]}
                   value={form.default_payment_terms}
                   onChangeText={(v) => setForm((prev) => ({ ...prev, default_payment_terms: v }))}
                   placeholder="Dias de pago"
@@ -485,31 +489,31 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 />
               </View>
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.default_currency}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, default_currency: v }))}
                 placeholder="Moneda (COP)"
                 placeholderTextColor="#64748b"
               />
 
-              <Text style={styles.groupTitle}>Informacion fiscal (FE)</Text>
+              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Informacion fiscal (FE)</Text>
               <View style={styles.taxRegimeList}>
                 {TAX_REGIME_OPTIONS.map((option) => {
                   const active = form.tax_regime === option.value;
                   return (
                     <Pressable
                       key={option.value}
-                      style={[styles.taxRegimeItem, active && styles.taxRegimeItemActive]}
+                      style={[styles.taxRegimeItem, isLightTheme && styles.taxRegimeItemLight, active && styles.taxRegimeItemActive]}
                       onPress={() => setForm((prev) => ({ ...prev, tax_regime: option.value }))}
                     >
-                      <Text style={[styles.taxRegimeText, active && styles.taxRegimeTextActive]}>{option.label}</Text>
+                      <Text style={[styles.taxRegimeText, isLightTheme && styles.taxRegimeTextLight, active && styles.taxRegimeTextActive]}>{option.label}</Text>
                     </Pressable>
                   );
                 })}
               </View>
 
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.ciiu_code}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, ciiu_code: v }))}
                 placeholder="Codigo CIIU"
@@ -518,28 +522,29 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 
               <View style={styles.switchRowWrap}>
                 <Pressable
-                  style={[styles.switchCard, form.is_responsible_for_iva && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_responsible_for_iva && styles.switchCardActive]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_responsible_for_iva: !prev.is_responsible_for_iva }))
                   }
                 >
-                  <Text style={styles.switchTitle}>Responsable de IVA</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.is_responsible_for_iva, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Responsable de IVA</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.is_responsible_for_iva, 'Si', 'No')}</Text>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, form.obligated_accounting && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.obligated_accounting && styles.switchCardActive]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, obligated_accounting: !prev.obligated_accounting }))
                   }
                 >
-                  <Text style={styles.switchTitle}>Obligado contabilidad</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.obligated_accounting, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Obligado contabilidad</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.obligated_accounting, 'Si', 'No')}</Text>
                 </Pressable>
 
                 <Pressable
                   style={[
                     styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
                     form.electronic_invoicing_enabled && styles.switchCardActive,
                   ]}
                   onPress={() =>
@@ -549,18 +554,18 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                     }))
                   }
                 >
-                  <Text style={styles.switchTitle}>Acepta FE</Text>
-                  <Text style={styles.switchDesc}>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Acepta FE</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>
                     {boolText(form.electronic_invoicing_enabled, 'Si', 'No')}
                   </Text>
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, form.is_active && styles.switchCardActive]}
+                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_active && styles.switchCardActive]}
                   onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
                 >
-                  <Text style={styles.switchTitle}>Activo</Text>
-                  <Text style={styles.switchDesc}>{boolText(form.is_active, 'Si', 'No')}</Text>
+                  <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Activo</Text>
+                  <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>{boolText(form.is_active, 'Si', 'No')}</Text>
                 </Pressable>
               </View>
 
@@ -582,6 +587,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -592,6 +598,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     color: '#f8fafc',
     paddingHorizontal: 10,
+  },
+  searchInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
   },
   searchBtn: {
     backgroundColor: '#1e40af',
@@ -610,8 +621,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginRight: 8,
   },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipActive: { backgroundColor: '#f59e0b', borderColor: '#f59e0b' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#451a03' },
   card: {
     backgroundColor: '#111827',
@@ -621,8 +634,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   name: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  nameLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -668,9 +684,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#f8fafc' },
   modalScroll: { flex: 1 },
   modalScrollContent: { paddingBottom: 20 },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: {
     color: '#93c5fd',
     marginTop: 10,
@@ -679,6 +697,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
+  groupTitleLight: { color: '#1d4ed8' },
   rowTwo: { flexDirection: 'row', gap: 8 },
   flexInput: { flex: 1 },
   shortInput: { width: 90 },
@@ -692,8 +711,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   toggleRow: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 2 },
   typeHint: { color: '#94a3b8', fontSize: 12, marginTop: 8 },
+  typeHintLight: { color: '#475569' },
   toggleBtn: {
     flex: 1,
     borderRadius: 8,
@@ -703,8 +724,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#111827',
   },
+  toggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   toggleBtnActive: { borderColor: '#2563eb', backgroundColor: '#172554' },
   toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  toggleBtnTextLight: { color: '#334155' },
   toggleBtnTextActive: { color: '#bfdbfe' },
   methodChipsRow: { flexDirection: 'row', gap: 6 },
   methodChip: {
@@ -715,8 +738,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     backgroundColor: '#0b1220',
   },
+  methodChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   methodChipActive: { backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' },
   methodChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  methodChipTextLight: { color: '#334155' },
   methodChipTextActive: { color: '#082f49' },
   taxRegimeList: { marginTop: 8, gap: 8 },
   taxRegimeItem: {
@@ -727,8 +752,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: '#0b1220',
   },
+  taxRegimeItemLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   taxRegimeItemActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
   taxRegimeText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
+  taxRegimeTextLight: { color: '#334155' },
   taxRegimeTextActive: { color: '#bae6fd' },
   switchRowWrap: { gap: 8, marginTop: 8 },
   switchCard: {
@@ -738,9 +765,12 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: '#111827',
   },
+  switchCardLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
   switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  switchTitleLight: { color: '#0f172a' },
   switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
+  switchDescLight: { color: '#1d4ed8' },
   primaryBtn: {
     marginTop: 14,
     backgroundColor: '#d97706',

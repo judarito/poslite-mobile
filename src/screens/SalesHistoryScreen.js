@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,17 +13,28 @@ import {
 } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
+import { useThemeMode } from '../lib/themeMode';
+import { getLatestPageCache, getPageCache } from '../services/offlineCache.service';
 import { listLocations } from '../services/inventoryCatalog.service';
 import { getPaymentMethodsForDropdown } from '../services/pos.service';
 import {
   createReturn,
+  discardPendingOfflineSale,
+  estimatePendingSaleTotal,
   getCompletedReturnQtyByLineIds,
+  getPendingOfflineSaleByOperationId,
+  getPendingOfflineSales,
   getSaleById,
   getSales,
+  retryPendingOfflineSale,
+  updatePendingOfflineSalePayload,
+  validatePendingOfflineSaleStock,
   voidSale,
 } from '../services/sales.service';
+import { syncPendingOperations } from '../services/sync.service';
+import { getPendingOpsCount } from '../storage/sqlite/database';
 
-const STATUS_FILTERS = ['', 'COMPLETED', 'VOIDED', 'PARTIAL_RETURN'];
+const STATUS_FILTERS = ['', 'COMPLETED', 'VOIDED', 'PARTIAL_RETURN', 'PENDING_SYNC', 'FAILED_SYNC'];
 const DATE_FILTERS = [
   { key: 'all', label: 'Todo', days: 0 },
   { key: 'today', label: 'Hoy', days: 1 },
@@ -55,6 +67,22 @@ function resolveDateRangeByDays(days) {
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+function applyClientFilters(rows = [], filters = {}) {
+  const statusFilter = String(filters?.status || '');
+  const locationFilter = String(filters?.location_id || '');
+  const fromDate = filters?.from_date ? new Date(filters.from_date) : null;
+  const toDate = filters?.to_date ? new Date(filters.to_date) : null;
+
+  return (rows || []).filter((sale) => {
+    if (statusFilter && String(sale.status || '') !== statusFilter) return false;
+    if (locationFilter && String(sale.location_id || '') !== locationFilter) return false;
+    const soldAt = new Date(sale.sold_at);
+    if (fromDate && soldAt < fromDate) return false;
+    if (toDate && soldAt > toDate) return false;
+    return true;
+  });
+}
+
 function buildSaleTicketText(sale, currencyFormatter) {
   const lines = (sale?.sale_lines || []).map((line) => {
     const name = line.variant?.product?.name || line.variant?.variant_name || 'Producto';
@@ -86,8 +114,12 @@ export default function SalesHistoryScreen({
   userProfile,
   formatMoney,
   offlineMode,
+  pendingOpsCount = 0,
+  onPendingOpsChange,
   pageSize = 20,
 }) {
+  const themeMode = useThemeMode();
+  const isLightTheme = themeMode === 'light';
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [detail, setDetail] = useState(null);
@@ -101,6 +133,11 @@ export default function SalesHistoryScreen({
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [saleToVoid, setSaleToVoid] = useState(null);
   const [locations, setLocations] = useState([]);
+  const [fromDateInput, setFromDateInput] = useState('');
+  const [toDateInput, setToDateInput] = useState('');
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editSale, setEditSale] = useState(null);
+  const [editLines, setEditLines] = useState([]);
 
   const {
     items: sales,
@@ -120,13 +157,81 @@ export default function SalesHistoryScreen({
     offlineMode,
     cacheNamespace: 'sales-history',
     initialFilters: { status: '', location_id: '', from_date: '', to_date: '' },
-    fetchPage: async ({ tenantId, page: nextPage, pageSize: nextPageSize, filters: nextFilters }) =>
-      getSales(tenantId, nextPage, nextPageSize, {
+    fetchPage: async ({ tenantId, page: nextPage, pageSize: nextPageSize, filters: nextFilters }) => {
+      const serverResult = await getSales(tenantId, nextPage, nextPageSize, {
         status: nextFilters?.status || null,
         location_id: nextFilters?.location_id || null,
         from_date: nextFilters?.from_date || null,
         to_date: nextFilters?.to_date || null,
-      }),
+      });
+
+      if (!serverResult?.success) return serverResult;
+
+      if (nextPage !== 1) return serverResult;
+
+      const pendingResult = await getPendingOfflineSales(tenantId, {
+        status: nextFilters?.status || null,
+        location_id: nextFilters?.location_id || null,
+        from_date: nextFilters?.from_date || null,
+        to_date: nextFilters?.to_date || null,
+      });
+
+      const pendingRows = pendingResult?.success ? pendingResult.data || [] : [];
+      if (!pendingRows.length) return serverResult;
+
+      return {
+        success: true,
+        data: [...pendingRows, ...(serverResult.data || [])],
+        total: Number(serverResult.total || 0) + pendingRows.length,
+      };
+    },
+    fetchOfflinePage: async ({ tenantId, page: nextPage, pageSize: nextPageSize, filters: nextFilters }) => {
+      const pendingResult = await getPendingOfflineSales(tenantId, {
+        status: nextFilters?.status || null,
+        location_id: nextFilters?.location_id || null,
+        from_date: nextFilters?.from_date || null,
+        to_date: nextFilters?.to_date || null,
+      });
+      const pendingRows = pendingResult?.success ? pendingResult.data || [] : [];
+
+      const exactCache = await getPageCache({
+        namespace: 'sales-history',
+        tenantId,
+        page: nextPage,
+        pageSize: nextPageSize,
+        filters: nextFilters,
+      });
+      const latestCache = exactCache
+        ? exactCache
+        : await getLatestPageCache({ namespace: 'sales-history', tenantId });
+
+      const cachedServerRowsRaw = latestCache?.items || [];
+      const cachedServerRows = applyClientFilters(
+        cachedServerRowsRaw.filter((row) => !row?.is_local_pending),
+        nextFilters,
+      );
+
+      if (nextPage === 1) {
+        const merged = [...pendingRows, ...cachedServerRows];
+        return {
+          success: true,
+          data: merged.slice(0, nextPageSize),
+          total: merged.length,
+          source: 'offline-local',
+          cachedAt: latestCache?.cachedAt || null,
+        };
+      }
+
+      const start = (nextPage - 1) * nextPageSize;
+      const pageRows = cachedServerRows.slice(start, start + nextPageSize);
+      return {
+        success: true,
+        data: pageRows,
+        total: cachedServerRows.length + pendingRows.length,
+        source: 'offline-local',
+        cachedAt: latestCache?.cachedAt || null,
+      };
+    },
   });
 
   useEffect(() => {
@@ -137,6 +242,25 @@ export default function SalesHistoryScreen({
     };
     load();
   }, [tenant?.tenant_id]);
+
+  useEffect(() => {
+    loadPage(1, filters);
+  }, [pendingOpsCount]);
+
+  useEffect(() => {
+    const formatIsoToYmd = (iso) => {
+      if (!iso) return '';
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return '';
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    setFromDateInput(formatIsoToYmd(filters?.from_date));
+    setToDateInput(formatIsoToYmd(filters?.to_date));
+  }, [filters?.from_date, filters?.to_date]);
 
   const activeDateFilterKey = (() => {
     const { from_date: fromDate, to_date: toDate } = filters || {};
@@ -384,8 +508,268 @@ export default function SalesHistoryScreen({
     setProcessing(false);
   };
 
+  const refreshPendingCount = async () => {
+    if (!onPendingOpsChange) return;
+    const next = await getPendingOpsCount();
+    onPendingOpsChange(next);
+  };
+
+  const retryPendingSale = async (sale) => {
+    const operationId = sale?.operation_id;
+    if (!operationId) return;
+    setProcessing(true);
+    const result = await retryPendingOfflineSale(operationId);
+    if (!result.success) {
+      setError(result.error || 'No fue posible reintentar venta offline');
+      setProcessing(false);
+      return;
+    }
+
+    const payload = sale?.local_payload || {};
+    if (!offlineMode) {
+      const stockCheck = await validatePendingOfflineSaleStock(tenant?.tenant_id, payload);
+      if (!stockCheck.success) {
+        setError(stockCheck.error || 'No fue posible validar stock antes de sincronizar.');
+        setProcessing(false);
+        return;
+      }
+      if (!stockCheck.ok) {
+        const firstIssue = stockCheck.issues?.[0];
+        if (firstIssue?.variant_id) {
+          const label = [firstIssue.product_name, firstIssue.variant_name, firstIssue.sku]
+            .filter(Boolean)
+            .join(' · ');
+          setError(
+            `Stock insuficiente en sede de la venta: ${label || firstIssue.variant_id}. Disponible: ${firstIssue.available}, Requerido: ${firstIssue.required}.`,
+          );
+        } else {
+          setError(stockCheck.issues?.[0]?.message || 'No pasa validación de stock.');
+        }
+        setProcessing(false);
+        return;
+      }
+    }
+
+    if (!offlineMode) {
+      await syncPendingOperations({ limit: 20 });
+    }
+
+    const stateAfter = await getPendingOfflineSaleByOperationId(operationId);
+    if (stateAfter.success && stateAfter.data?.status === 'FAILED_SYNC') {
+      setError(
+        stateAfter.data.sync_error ||
+          'La venta sigue fallando al sincronizar. Revisa inventario en la sede y vuelve a intentar.',
+      );
+    }
+
+    await refreshPendingCount();
+    await loadPage(1, filters);
+    setProcessing(false);
+  };
+
+  const discardPendingSale = (sale) => {
+    const operationId = sale?.operation_id;
+    if (!operationId) return;
+    Alert.alert('Descartar venta offline', `Se descartara ${sale.sale_number || 'la venta'} de la cola local.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Descartar',
+        style: 'destructive',
+        onPress: async () => {
+          setProcessing(true);
+          const result = await discardPendingOfflineSale(operationId);
+          if (!result.success) {
+            setError(result.error || 'No fue posible descartar venta offline');
+            setProcessing(false);
+            return;
+          }
+          await refreshPendingCount();
+          await loadPage(1, filters);
+          setProcessing(false);
+        },
+      },
+    ]);
+  };
+
+  const openEditPendingSale = async (sale) => {
+    const operationId = sale?.operation_id;
+    if (!operationId) return;
+    const result = await getPendingOfflineSaleByOperationId(operationId);
+    if (!result.success) {
+      setError(result.error || 'No fue posible cargar borrador offline');
+      return;
+    }
+    const payload = result.data?.payload || sale.local_payload || {};
+    const lines = Array.isArray(payload.lines) ? payload.lines : [];
+    if (!lines.length) {
+      setError('La venta offline no tiene lineas editables.');
+      return;
+    }
+    setEditSale({
+      ...sale,
+      operation_id: operationId,
+      payload,
+    });
+    setEditLines(
+      lines.map((line, idx) => ({
+        key: `${line.variant_id || idx}-${idx}`,
+        variant_id: line.variant_id,
+        qty: Number(line.qty || 1),
+        unit_price: Number(line.unit_price || 0),
+        discount: Number(line.discount || 0),
+      })),
+    );
+    setEditDialogOpen(true);
+  };
+
+  const saveEditedPendingSale = async () => {
+    if (!editSale?.operation_id || !tenant?.tenant_id) return;
+    const normalizedLines = editLines
+      .map((line) => ({
+        variant_id: line.variant_id,
+        qty: Math.max(0, Math.round(Number(line.qty || 0))),
+        unit_price: Number(line.unit_price || 0),
+        discount: Number(line.discount || 0),
+        discount_type: 'AMOUNT',
+      }))
+      .filter((line) => line.qty > 0 && line.variant_id);
+
+    if (!normalizedLines.length) {
+      setError('Debe quedar al menos una linea con cantidad mayor que cero.');
+      return;
+    }
+
+    setProcessing(true);
+    const totalResult = await estimatePendingSaleTotal(tenant.tenant_id, normalizedLines);
+    if (!totalResult.success) {
+      setError(totalResult.error || 'No fue posible estimar total para sincronizar');
+      setProcessing(false);
+      return;
+    }
+
+    const currentPayments = Array.isArray(editSale.payload?.payments) ? editSale.payload.payments : [];
+    const firstPayment = currentPayments[0] || { payment_method_code: 'EFECTIVO' };
+    const nextPayload = {
+      ...(editSale.payload || {}),
+      lines: normalizedLines,
+      payments: [
+        {
+          payment_method_code: firstPayment.payment_method_code || 'EFECTIVO',
+          amount: Number(totalResult.total || 0),
+          reference: firstPayment.reference || null,
+        },
+      ],
+    };
+
+    const updateResult = await updatePendingOfflineSalePayload(editSale.operation_id, nextPayload);
+    if (!updateResult.success) {
+      setError(updateResult.error || 'No fue posible guardar cambios de venta offline');
+      setProcessing(false);
+      return;
+    }
+
+    if (!offlineMode) {
+      const stockCheck = await validatePendingOfflineSaleStock(tenant?.tenant_id, nextPayload);
+      if (!stockCheck.success) {
+        setError(stockCheck.error || 'No fue posible validar stock antes de sincronizar.');
+        setProcessing(false);
+        return;
+      }
+      if (!stockCheck.ok) {
+        const firstIssue = stockCheck.issues?.[0];
+        if (firstIssue?.variant_id) {
+          const label = [firstIssue.product_name, firstIssue.variant_name, firstIssue.sku]
+            .filter(Boolean)
+            .join(' · ');
+          setError(
+            `Stock insuficiente en sede de la venta: ${label || firstIssue.variant_id}. Disponible: ${firstIssue.available}, Requerido: ${firstIssue.required}.`,
+          );
+        } else {
+          setError(stockCheck.issues?.[0]?.message || 'No pasa validación de stock.');
+        }
+        setProcessing(false);
+        return;
+      }
+    }
+
+    const retryResult = await retryPendingOfflineSale(editSale.operation_id);
+    if (!retryResult.success) {
+      setError(retryResult.error || 'No fue posible enviar venta a reintento');
+      setProcessing(false);
+      return;
+    }
+
+    if (!offlineMode) {
+      await syncPendingOperations({ limit: 20 });
+    }
+
+    const stateAfter = await getPendingOfflineSaleByOperationId(editSale.operation_id);
+    if (stateAfter.success && stateAfter.data?.status === 'FAILED_SYNC') {
+      setError(
+        stateAfter.data.sync_error ||
+          'Sigue fallando. Revisa stock disponible en sede o reduce cantidad.',
+      );
+    } else {
+      setEditDialogOpen(false);
+      setEditSale(null);
+      setEditLines([]);
+    }
+
+    await refreshPendingCount();
+    await loadPage(1, filters);
+    setProcessing(false);
+  };
+
+  const normalizeDateInput = (value) => value.replace(/[^\d-]/g, '').slice(0, 10);
+
+  const parseYmdToDate = (value) => {
+    if (!value) return null;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [, y, m, d] = match;
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.getFullYear() !== Number(y) ||
+      date.getMonth() !== Number(m) - 1 ||
+      date.getDate() !== Number(d)
+    ) {
+      return null;
+    }
+    return date;
+  };
+
+  const applyCustomDateRange = () => {
+    const fromDate = parseYmdToDate(fromDateInput);
+    const toDate = parseYmdToDate(toDateInput);
+
+    if (fromDateInput && !fromDate) {
+      setError('Fecha "Desde" invalida. Usa formato YYYY-MM-DD.');
+      return;
+    }
+    if (toDateInput && !toDate) {
+      setError('Fecha "Hasta" invalida. Usa formato YYYY-MM-DD.');
+      return;
+    }
+    if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
+      setError('"Desde" no puede ser mayor que "Hasta".');
+      return;
+    }
+
+    updateFilters({
+      from_date: fromDate ? toStartOfDayIso(fromDate) : '',
+      to_date: toDate ? toEndOfDayIso(toDate) : '',
+    });
+  };
+
+  const clearCustomDateRange = () => {
+    setFromDateInput('');
+    setToDateInput('');
+    updateFilters({ from_date: '', to_date: '' });
+  };
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         {STATUS_FILTERS.map((s) => {
           const active = (filters?.status || '') === s;
@@ -393,10 +777,10 @@ export default function SalesHistoryScreen({
           return (
             <Pressable
               key={label}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
               onPress={() => updateFilters({ status: s })}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
             </Pressable>
           );
         })}
@@ -409,10 +793,10 @@ export default function SalesHistoryScreen({
           return (
             <Pressable
               key={item.key}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
               onPress={() => updateFilters(range)}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
                 {item.label}
               </Text>
             </Pressable>
@@ -420,12 +804,44 @@ export default function SalesHistoryScreen({
         })}
       </ScrollView>
 
+      <View style={[styles.dateRangeCard, isLightTheme && styles.dateRangeCardLight]}>
+        <Text style={[styles.dateRangeTitle, isLightTheme && styles.dateRangeTitleLight]}>Rango de fechas</Text>
+        <View style={styles.dateRangeInputsRow}>
+          <TextInput
+            value={fromDateInput}
+            onChangeText={(value) => setFromDateInput(normalizeDateInput(value))}
+            placeholder="Desde (YYYY-MM-DD)"
+            placeholderTextColor="#64748b"
+            style={[styles.input, isLightTheme && styles.inputLight, styles.dateInput]}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TextInput
+            value={toDateInput}
+            onChangeText={(value) => setToDateInput(normalizeDateInput(value))}
+            placeholder="Hasta (YYYY-MM-DD)"
+            placeholderTextColor="#64748b"
+            style={[styles.input, isLightTheme && styles.inputLight, styles.dateInput]}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+        <View style={styles.dateActionsRow}>
+          <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={applyCustomDateRange}>
+            <Text style={styles.actionBtnText}>Aplicar</Text>
+          </Pressable>
+          <Pressable style={[styles.actionBtn, styles.printBtn]} onPress={clearCustomDateRange}>
+            <Text style={styles.actionBtnText}>Limpiar</Text>
+          </Pressable>
+        </View>
+      </View>
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <Pressable
-          style={[styles.filterChip, !filters?.location_id && styles.filterChipActive]}
+          style={[styles.filterChip, isLightTheme && styles.filterChipLight, !filters?.location_id && styles.filterChipActive]}
           onPress={() => updateFilters({ location_id: '' })}
         >
-          <Text style={[styles.filterChipText, !filters?.location_id && styles.filterChipTextActive]}>
+          <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, !filters?.location_id && styles.filterChipTextActive]}>
             Todas las sedes
           </Text>
         </Pressable>
@@ -434,10 +850,10 @@ export default function SalesHistoryScreen({
           return (
             <Pressable
               key={loc.location_id}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
               onPress={() => updateFilters({ location_id: loc.location_id })}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
                 {loc.name}
               </Text>
             </Pressable>
@@ -446,6 +862,7 @@ export default function SalesHistoryScreen({
       </ScrollView>
 
       <PaginatedList
+        themeMode={themeMode}
         title="Historial de Ventas"
         loading={loading}
         error={error}
@@ -461,23 +878,65 @@ export default function SalesHistoryScreen({
             : null
         }
         renderItem={(sale) => (
-          <View key={sale.sale_id} style={styles.card}>
+          <View key={sale.sale_id} style={[styles.card, isLightTheme && styles.cardLight]}>
             <View style={styles.cardTopRow}>
-              <Text style={styles.saleNumber}>{sale.sale_number || sale.sale_id?.slice(0, 8)}</Text>
-              <Text style={styles.status}>{sale.status}</Text>
+              <Text style={[styles.saleNumber, isLightTheme && styles.saleNumberLight]}>{sale.sale_number || sale.sale_id?.slice(0, 8)}</Text>
+              <Text
+                style={[
+                  styles.status,
+                  sale.status === 'PENDING_SYNC' && styles.statusPending,
+                  sale.status === 'FAILED_SYNC' && styles.statusFailed,
+                ]}
+              >
+                {sale.status}
+              </Text>
             </View>
-            <Text style={styles.metaLine}>{new Date(sale.sold_at).toLocaleString()}</Text>
-            <Text style={styles.metaLine}>Sede: {sale.location?.name || 'Sin sede'}</Text>
-            <Text style={styles.metaLine}>Cliente: {sale.customer?.full_name || 'Consumidor final'}</Text>
+            <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{new Date(sale.sold_at).toLocaleString()}</Text>
+            <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Sede: {sale.location?.name || 'Sin sede'}</Text>
+            <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Cliente: {sale.customer?.full_name || 'Consumidor final'}</Text>
+            {sale.sync_error ? <Text style={styles.syncErrorLine}>Error sync: {sale.sync_error}</Text> : null}
             <Text style={styles.total}>{formatMoney(sale.total || 0)}</Text>
 
             <View style={styles.actionsRow}>
-              <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={() => openDetail(sale.sale_id)}>
-                <Text style={styles.actionBtnText}>Detalle</Text>
-              </Pressable>
-              <Pressable style={[styles.actionBtn, styles.printBtn]} onPress={() => handlePrintSale(sale)}>
-                <Text style={styles.actionBtnText}>Imprimir</Text>
-              </Pressable>
+              {!sale.is_local_pending ? (
+                <>
+                  <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={() => openDetail(sale.sale_id)}>
+                    <Text style={styles.actionBtnText}>Detalle</Text>
+                  </Pressable>
+                  <Pressable style={[styles.actionBtn, styles.printBtn]} onPress={() => handlePrintSale(sale)}>
+                    <Text style={styles.actionBtnText}>Imprimir</Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {sale.is_local_pending ? (
+                <>
+                  {sale.status === 'FAILED_SYNC' ? (
+                    <Pressable
+                      style={[styles.actionBtn, styles.retryBtn, processing && styles.pageBtnDisabled]}
+                      disabled={processing}
+                      onPress={() => retryPendingSale(sale)}
+                    >
+                      <Text style={styles.actionBtnText}>Reintentar</Text>
+                    </Pressable>
+                  ) : null}
+                  {sale.status === 'FAILED_SYNC' ? (
+                    <Pressable
+                      style={[styles.actionBtn, styles.detailBtn, processing && styles.pageBtnDisabled]}
+                      disabled={processing}
+                      onPress={() => openEditPendingSale(sale)}
+                    >
+                      <Text style={styles.actionBtnText}>Editar</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    style={[styles.actionBtn, styles.voidBtn, processing && styles.pageBtnDisabled]}
+                    disabled={processing}
+                    onPress={() => discardPendingSale(sale)}
+                  >
+                    <Text style={styles.actionBtnText}>Descartar</Text>
+                  </Pressable>
+                </>
+              ) : null}
               {sale.status === 'COMPLETED' ? (
                 <>
                   <Pressable style={[styles.actionBtn, styles.returnBtn]} onPress={() => openReturnDialog(sale)}>
@@ -727,12 +1186,62 @@ export default function SalesHistoryScreen({
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={editDialogOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditDialogOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBody}>
+            <ScrollView>
+              <Text style={styles.modalTitle}>Editar venta offline</Text>
+              <Text style={styles.metaLine}>Ajusta cantidades para reintentar sincronizacion.</Text>
+              {editLines.map((line, idx) => (
+                <View key={line.key} style={styles.returnLineCard}>
+                  <Text style={styles.metaLine}>Variante: {line.variant_id?.slice(0, 8) || '-'}</Text>
+                  <Text style={styles.metaLine}>Precio: {formatMoney(line.unit_price || 0)}</Text>
+                  <Text style={styles.metaLine}>Descuento: {formatMoney(line.discount || 0)}</Text>
+                  <View style={styles.qtyEditorRow}>
+                    <Text style={styles.metaLine}>Cantidad</Text>
+                    <TextInput
+                      style={styles.qtyInput}
+                      value={String(line.qty || 0)}
+                      onChangeText={(value) => {
+                        const qty = Math.max(0, Math.round(Number(value || 0)));
+                        setEditLines((prev) =>
+                          prev.map((l, i) => (i === idx ? { ...l, qty } : l)),
+                        );
+                      }}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+              ))}
+
+              <Pressable
+                style={[styles.actionBtn, styles.retryBtn, { marginTop: 10 }, processing && styles.pageBtnDisabled]}
+                onPress={saveEditedPendingSale}
+                disabled={processing}
+              >
+                <Text style={styles.actionBtnText}>{processing ? 'Guardando...' : 'Guardar y reintentar'}</Text>
+              </Pressable>
+            </ScrollView>
+
+            <Pressable onPress={() => setEditDialogOpen(false)} style={styles.closeBtn}>
+              <Text style={styles.closeBtnText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  containerLight: { backgroundColor: '#f8fafc' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700', marginBottom: 10 },
   filtersScroll: { maxHeight: 40, marginBottom: 8 },
   filterChip: {
@@ -743,9 +1252,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginRight: 8,
   },
+  filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipActive: { backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#082f49' },
+  dateRangeCard: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  dateRangeCardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
+  dateRangeTitle: { color: '#e2e8f0', fontWeight: '700', marginBottom: 8 },
+  dateRangeTitleLight: { color: '#0f172a' },
+  dateRangeInputsRow: { flexDirection: 'row', gap: 8 },
+  dateInput: { flex: 1, marginTop: 0 },
+  dateActionsRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   list: { flex: 1 },
   card: {
     backgroundColor: '#111827',
@@ -755,15 +1280,22 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   saleNumber: { color: '#f8fafc', fontWeight: '700' },
+  saleNumberLight: { color: '#0f172a' },
   status: { color: '#93c5fd', fontSize: 12, fontWeight: '700' },
+  statusPending: { color: '#fbbf24' },
+  statusFailed: { color: '#f87171' },
   metaLine: { color: '#cbd5e1', fontSize: 13, marginBottom: 2 },
+  metaLineLight: { color: '#475569' },
+  syncErrorLine: { color: '#fca5a5', fontSize: 12, marginBottom: 2 },
   total: { color: '#22d3ee', fontSize: 18, fontWeight: '700', marginTop: 4 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   actionBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   detailBtn: { backgroundColor: '#1e40af' },
   printBtn: { backgroundColor: '#0369a1' },
+  retryBtn: { backgroundColor: '#b45309' },
   returnBtn: { backgroundColor: '#a16207' },
   voidBtn: { backgroundColor: '#7f1d1d' },
   actionBtnText: { color: '#e2e8f0', fontWeight: '700', fontSize: 12 },
@@ -848,6 +1380,11 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     paddingHorizontal: 10,
     marginTop: 8,
+  },
+  inputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
   },
   refundCard: {
     borderWidth: 1,

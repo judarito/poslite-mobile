@@ -6,9 +6,11 @@ const DEFAULT_PAGE_SIZE = 20;
 function normalizeSettings(data) {
   const raw = data || {};
   const pageSize = Number(raw.default_page_size || DEFAULT_PAGE_SIZE);
+  const themeRaw = String(raw.theme || '').trim().toLowerCase();
+  const theme = themeRaw === 'light' || themeRaw === 'auto' ? themeRaw : 'dark';
   return {
     ...raw,
-    theme: raw.theme || 'dark',
+    theme,
     default_page_size: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE,
   };
 }
