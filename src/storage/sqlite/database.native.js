@@ -86,6 +86,13 @@ export async function initOfflineDatabase() {
       tenant_json TEXT NOT NULL,
       cached_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS menu_cache (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      auth_user_id TEXT NOT NULL,
+      menu_json TEXT NOT NULL,
+      cached_at TEXT NOT NULL
+    );
   `);
 }
 
@@ -131,6 +138,41 @@ export async function clearAuthCache() {
   await db.runAsync(`DELETE FROM auth_cache WHERE id = 1`);
 }
 
+export async function saveMenuCache({ authUserId, menuTree }) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      INSERT INTO menu_cache (id, auth_user_id, menu_json, cached_at)
+      VALUES (1, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        auth_user_id = excluded.auth_user_id,
+        menu_json = excluded.menu_json,
+        cached_at = excluded.cached_at
+    `,
+    [authUserId, JSON.stringify(menuTree || []), now],
+  );
+}
+
+export async function getMenuCache() {
+  const db = await getDb();
+  const row = await db.getFirstAsync(
+    `SELECT auth_user_id, menu_json, cached_at FROM menu_cache WHERE id = 1`,
+  );
+  if (!row) return null;
+
+  return {
+    authUserId: row.auth_user_id,
+    menuTree: JSON.parse(row.menu_json),
+    cachedAt: row.cached_at,
+  };
+}
+
+export async function clearMenuCache() {
+  const db = await getDb();
+  await db.runAsync(`DELETE FROM menu_cache WHERE id = 1`);
+}
+
 export async function upsertSyncState(key, value) {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -144,6 +186,24 @@ export async function upsertSyncState(key, value) {
     `,
     [key, JSON.stringify(value), now],
   );
+}
+
+export async function getSyncState(key) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(
+    `SELECT value, updated_at FROM sync_state WHERE key = ?`,
+    [key],
+  );
+  if (!row) return null;
+  return {
+    value: JSON.parse(row.value),
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function clearSyncState(key) {
+  const db = await getDb();
+  await db.runAsync(`DELETE FROM sync_state WHERE key = ?`, [key]);
 }
 
 export async function enqueuePendingOp(op) {
@@ -176,4 +236,92 @@ export async function getPendingOpsCount() {
     `SELECT COUNT(*) AS total FROM pending_ops WHERE status = 'PENDING'`,
   );
   return Number(row?.total || 0);
+}
+
+export async function getPendingOps(limit = 50) {
+  const db = await getDb();
+  const rows = await db.getAllAsync(
+    `
+      SELECT
+        op_id, op_type, tenant_id, user_id, device_id, payload, status,
+        retry_count, last_error, created_at, updated_at
+      FROM pending_ops
+      WHERE status IN ('PENDING', 'FAILED')
+      ORDER BY created_at ASC
+      LIMIT ?
+    `,
+    [limit],
+  );
+
+  return (rows || []).map((row) => ({
+    opId: row.op_id,
+    opType: row.op_type,
+    tenantId: row.tenant_id,
+    userId: row.user_id,
+    deviceId: row.device_id,
+    payload: JSON.parse(row.payload || '{}'),
+    status: row.status,
+    retryCount: Number(row.retry_count || 0),
+    lastError: row.last_error || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function markPendingOpProcessing(opId) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET status = 'PROCESSING', updated_at = ?
+      WHERE op_id = ?
+    `,
+    [now, opId],
+  );
+}
+
+export async function markPendingOpDone(opId) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET status = 'DONE',
+          last_error = NULL,
+          updated_at = ?
+      WHERE op_id = ?
+    `,
+    [now, opId],
+  );
+}
+
+export async function markPendingOpFailed(opId, errorMessage) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET status = 'FAILED',
+          retry_count = retry_count + 1,
+          last_error = ?,
+          updated_at = ?
+      WHERE op_id = ?
+    `,
+    [String(errorMessage || 'Error desconocido'), now, opId],
+  );
+}
+
+export async function resetStuckProcessingOps() {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    `
+      UPDATE pending_ops
+      SET status = 'PENDING',
+          updated_at = ?
+      WHERE status = 'PROCESSING'
+    `,
+    [now],
+  );
 }

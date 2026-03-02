@@ -1,0 +1,540 @@
+import { useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import PaginatedList from '../components/PaginatedList';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+import { listActiveUnits } from '../services/units.service';
+import {
+  createProduct,
+  listCategoryOptions,
+  listProducts,
+  removeProduct,
+  updateProduct,
+} from '../services/productsCatalog.service';
+
+const PRODUCT_TABS = [
+  { value: false, label: 'Productos para venta' },
+  { value: true, label: 'Insumos/componentes' },
+];
+
+const EMPTY_FORM = {
+  product_id: null,
+  name: '',
+  description: '',
+  category_id: null,
+  unit_id: null,
+  is_active: true,
+  track_inventory: true,
+  requires_expiration: false,
+  inventory_behavior: 'RESELL',
+  is_component: false,
+};
+
+function boolText(value, yes, no) {
+  return value ? yes : no;
+}
+
+export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [unitOptions, setUnitOptions] = useState([]);
+
+  const {
+    items: rows,
+    page,
+    totalPages,
+    loading,
+    error,
+    cacheInfo,
+    filters,
+    setError,
+    changePage,
+    updateFilters,
+    loadPage,
+  } = usePaginatedList({
+    tenantId: tenant?.tenant_id,
+    pageSize,
+    offlineMode,
+    cacheNamespace: 'catalog-products',
+    initialFilters: { search: '', isComponent: false },
+    fetchPage: async ({ page: nextPage, pageSize: nextPageSize, filters: nextFilters, tenantId }) => {
+      const offset = (nextPage - 1) * nextPageSize;
+      return listProducts({
+        tenantId,
+        search: nextFilters?.search || '',
+        limit: nextPageSize,
+        offset,
+        isComponent: nextFilters?.isComponent,
+      });
+    },
+  });
+
+  useEffect(() => {
+    const loadLookups = async () => {
+      if (!tenant?.tenant_id) return;
+      const [cats, units] = await Promise.all([
+        listCategoryOptions(tenant.tenant_id),
+        listActiveUnits(tenant.tenant_id),
+      ]);
+
+      if (cats.success) setCategoryOptions(cats.data || []);
+      if (units.success) setUnitOptions(units.data || []);
+    };
+
+    loadLookups();
+  }, [tenant?.tenant_id]);
+
+  const openCreate = () => {
+    setForm({ ...EMPTY_FORM, is_component: filters?.isComponent === true });
+    setModalOpen(true);
+  };
+
+  const openEdit = (item) => {
+    setForm({
+      product_id: item.product_id,
+      name: item.name || '',
+      description: item.description || '',
+      category_id: item.category_id || null,
+      unit_id: item.unit_id || null,
+      is_active: item.is_active !== false,
+      track_inventory: item.track_inventory !== false,
+      requires_expiration: item.requires_expiration === true,
+      inventory_behavior: item.inventory_behavior || 'RESELL',
+      is_component: item.is_component === true,
+    });
+    setModalOpen(true);
+  };
+
+  const save = async () => {
+    if (offlineMode) {
+      setError('Productos no permite escritura en modo offline.');
+      return;
+    }
+
+    const name = String(form.name || '').trim();
+    if (!name) {
+      setError('Nombre del producto es obligatorio.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    const payload = {
+      tenant_id: tenant?.tenant_id,
+      name,
+      description: String(form.description || '').trim() || null,
+      category_id: form.category_id || null,
+      unit_id: form.unit_id || null,
+      is_active: form.is_active !== false,
+      track_inventory: form.track_inventory !== false,
+      requires_expiration: form.requires_expiration === true,
+      inventory_behavior: form.inventory_behavior || 'RESELL',
+      is_component: form.is_component === true,
+    };
+
+    const result = form.product_id
+      ? await updateProduct(form.product_id, tenant?.tenant_id, payload)
+      : await createProduct(payload);
+
+    if (!result.success) {
+      setError(result.error || 'No se pudo guardar producto');
+      setSaving(false);
+      return;
+    }
+
+    setModalOpen(false);
+    setForm({ ...EMPTY_FORM });
+    await loadPage(page, filters);
+    setSaving(false);
+  };
+
+  const remove = (item) => {
+    Alert.alert('Eliminar producto', `Se eliminara ${item.name}.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          if (offlineMode) {
+            setError('No puedes eliminar productos en modo offline.');
+            return;
+          }
+
+          const result = await removeProduct(item.product_id, tenant?.tenant_id);
+          if (!result.success) {
+            setError(result.error || 'No se pudo eliminar producto');
+            return;
+          }
+          await loadPage(page, filters);
+        },
+      },
+    ]);
+  };
+
+  const renderSelectorOption = (label, active, onPress) => (
+    <Pressable style={[styles.selectorOption, active && styles.selectorOptionActive]} onPress={onPress}>
+      <Text style={[styles.selectorText, active && styles.selectorTextActive]}>{label}</Text>
+    </Pressable>
+  );
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.tabRow}>
+        {PRODUCT_TABS.map((tab) => {
+          const active = Boolean(filters?.isComponent) === tab.value;
+          return (
+            <Pressable
+              key={tab.label}
+              style={[styles.tabBtn, active && styles.tabBtnActive]}
+              onPress={() => updateFilters({ isComponent: tab.value })}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.toolbar}>
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Buscar por nombre o descripcion"
+          placeholderTextColor="#64748b"
+          onSubmitEditing={() => updateFilters({ search })}
+        />
+        <Pressable style={styles.searchBtn} onPress={() => updateFilters({ search })}>
+          <Text style={styles.searchBtnText}>Buscar</Text>
+        </Pressable>
+      </View>
+
+      <PaginatedList
+        title={filters?.isComponent ? 'Insumos / Componentes' : 'Productos'}
+        loading={loading}
+        error={error}
+        items={rows}
+        emptyText="No hay productos registrados."
+        page={page}
+        totalPages={totalPages}
+        onPrev={() => changePage(page - 1)}
+        onNext={() => changePage(page + 1)}
+        footerMeta={
+          cacheInfo?.source === 'cache' && cacheInfo?.cachedAt
+            ? `Offline cache: ${new Date(cacheInfo.cachedAt).toLocaleString()}`
+            : null
+        }
+        renderItem={(item) => (
+          <View key={item.product_id} style={styles.card}>
+            <Text style={styles.title}>{item.name}</Text>
+            <Text style={styles.meta}>{item.category?.name || 'Sin categoria'}</Text>
+            <Text style={styles.meta}>{item.unit ? `${item.unit.code} - ${item.unit.name}` : 'Sin unidad'}</Text>
+            <View style={styles.badgesRow}>
+              <View style={[styles.badge, item.is_active ? styles.badgeGreen : styles.badgeRed]}>
+                <Text style={styles.badgeText}>{item.is_active ? 'Activo' : 'Inactivo'}</Text>
+              </View>
+              <View style={[styles.badge, styles.badgeBlue]}>
+                <Text style={styles.badgeText}>{item.product_variants?.length || 0} variante(s)</Text>
+              </View>
+              {item.track_inventory ? (
+                <View style={[styles.badge, styles.badgeSky]}>
+                  <Text style={styles.badgeText}>Inventario</Text>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.actions}>
+              <Pressable style={styles.secondaryBtn} onPress={() => openEdit(item)}>
+                <Text style={styles.secondaryBtnText}>Editar</Text>
+              </Pressable>
+              <Pressable style={styles.dangerBtn} onPress={() => remove(item)}>
+                <Text style={styles.dangerBtnText}>Eliminar</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      />
+
+      <Pressable style={styles.fab} onPress={openCreate}>
+        <Text style={styles.fabText}>+ Nuevo</Text>
+      </Pressable>
+
+      <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBody}>
+            <ScrollView>
+              <Text style={styles.modalTitle}>{form.product_id ? 'Editar producto' : 'Nuevo producto'}</Text>
+
+              <TextInput
+                style={styles.input}
+                value={form.name}
+                onChangeText={(v) => setForm((prev) => ({ ...prev, name: v }))}
+                placeholder="Nombre *"
+                placeholderTextColor="#64748b"
+              />
+
+              <TextInput
+                style={[styles.input, { minHeight: 70 }]}
+                value={form.description}
+                onChangeText={(v) => setForm((prev) => ({ ...prev, description: v }))}
+                placeholder="Descripcion"
+                placeholderTextColor="#64748b"
+                multiline
+              />
+
+              <Text style={styles.groupTitle}>Tipo</Text>
+              <View style={styles.toggleRow}>
+                <Pressable
+                  style={[styles.toggleBtn, !form.is_component && styles.toggleBtnActive]}
+                  onPress={() =>
+                    setForm((prev) => ({ ...prev, is_component: false, inventory_behavior: 'RESELL' }))
+                  }
+                >
+                  <Text style={[styles.toggleBtnText, !form.is_component && styles.toggleBtnTextActive]}>
+                    Producto para venta
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.toggleBtn, form.is_component && styles.toggleBtnActive]}
+                  onPress={() =>
+                    setForm((prev) => ({ ...prev, is_component: true, inventory_behavior: 'MANUFACTURED' }))
+                  }
+                >
+                  <Text style={[styles.toggleBtnText, form.is_component && styles.toggleBtnTextActive]}>
+                    Componente
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.groupTitle}>Categoria</Text>
+              {renderSelectorOption('Sin categoria', form.category_id === null, () =>
+                setForm((prev) => ({ ...prev, category_id: null })),
+              )}
+              {(categoryOptions || []).map((cat) =>
+                renderSelectorOption(cat.name, form.category_id === cat.category_id, () =>
+                  setForm((prev) => ({ ...prev, category_id: cat.category_id })),
+                ),
+              )}
+
+              <Text style={styles.groupTitle}>Unidad de medida</Text>
+              {renderSelectorOption('Sin unidad', form.unit_id === null, () =>
+                setForm((prev) => ({ ...prev, unit_id: null })),
+              )}
+              {(unitOptions || []).map((unit) =>
+                renderSelectorOption(
+                  `${unit.code} - ${unit.name}${unit.is_system ? ' (sistema)' : ''}`,
+                  form.unit_id === unit.unit_id,
+                  () => setForm((prev) => ({ ...prev, unit_id: unit.unit_id })),
+                ),
+              )}
+
+              <Text style={styles.groupTitle}>Configuracion</Text>
+              <View style={styles.switchRowWrap}>
+                <Pressable
+                  style={[styles.switchCard, form.is_active && styles.switchCardActive]}
+                  onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
+                >
+                  <Text style={styles.switchTitle}>Producto activo</Text>
+                  <Text style={styles.switchDesc}>{boolText(form.is_active, 'Si', 'No')}</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.switchCard, form.track_inventory && styles.switchCardActive]}
+                  onPress={() => setForm((prev) => ({ ...prev, track_inventory: !prev.track_inventory }))}
+                >
+                  <Text style={styles.switchTitle}>Controla inventario</Text>
+                  <Text style={styles.switchDesc}>{boolText(form.track_inventory, 'Si', 'No')}</Text>
+                </Pressable>
+
+                <Pressable
+                  style={[styles.switchCard, form.requires_expiration && styles.switchCardActive]}
+                  onPress={() =>
+                    setForm((prev) => ({ ...prev, requires_expiration: !prev.requires_expiration }))
+                  }
+                >
+                  <Text style={styles.switchTitle}>Maneja vencimiento</Text>
+                  <Text style={styles.switchDesc}>{boolText(form.requires_expiration, 'Si', 'No')}</Text>
+                </Pressable>
+              </View>
+
+              <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
+                <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+              </Pressable>
+            </ScrollView>
+
+            <Pressable onPress={() => setModalOpen(false)} style={styles.closeBtn}>
+              <Text style={styles.closeBtnText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  tabBtn: {
+    flex: 1,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#111827',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  tabBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabTextActive: { color: '#bae6fd' },
+  toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  searchInput: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#111827',
+    color: '#f8fafc',
+    paddingHorizontal: 10,
+  },
+  searchBtn: {
+    backgroundColor: '#1e40af',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchBtnText: { color: '#dbeafe', fontWeight: '700' },
+  card: {
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  badge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#0f172a',
+  },
+  badgeGreen: { borderColor: '#16a34a' },
+  badgeRed: { borderColor: '#ef4444' },
+  badgeBlue: { borderColor: '#3b82f6' },
+  badgeSky: { borderColor: '#0ea5e9' },
+  badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  secondaryBtn: {
+    flex: 1,
+    backgroundColor: '#1e40af',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  secondaryBtnText: { color: '#dbeafe', fontWeight: '700' },
+  dangerBtn: {
+    flex: 1,
+    backgroundColor: '#7f1d1d',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 72,
+    backgroundColor: '#f59e0b',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  fabText: { color: '#451a03', fontWeight: '800' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalBody: {
+    maxHeight: '90%',
+    backgroundColor: '#0f172a',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    padding: 14,
+  },
+  modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  groupTitle: {
+    color: '#93c5fd',
+    marginTop: 12,
+    marginBottom: 6,
+    fontWeight: '700',
+    fontSize: 13,
+    textTransform: 'uppercase',
+  },
+  input: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 10,
+    color: '#f8fafc',
+    marginTop: 8,
+    backgroundColor: '#111827',
+  },
+  toggleRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  toggleBtn: {
+    flex: 1,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#111827',
+  },
+  toggleBtnActive: { borderColor: '#2563eb', backgroundColor: '#172554' },
+  toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  toggleBtnTextActive: { color: '#bfdbfe' },
+  selectorOption: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: '#111827',
+    marginTop: 8,
+  },
+  selectorOptionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  selectorText: { color: '#cbd5e1', fontWeight: '600' },
+  selectorTextActive: { color: '#bae6fd' },
+  switchRowWrap: { gap: 8, marginTop: 8 },
+  switchCard: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: '#111827',
+  },
+  switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
+  switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
+  primaryBtn: {
+    marginTop: 14,
+    backgroundColor: '#d97706',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  closeBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    backgroundColor: '#1d4ed8',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  closeBtnText: { color: '#fff', fontWeight: '700' },
+});

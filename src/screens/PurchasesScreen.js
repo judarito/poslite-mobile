@@ -1,0 +1,183 @@
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import PaginatedList from '../components/PaginatedList';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+import { listLocations, listPurchases } from '../services/inventoryCatalog.service';
+
+export default function PurchasesScreen({ tenant, offlineMode, pageSize = 20, formatMoney }) {
+  const [locations, setLocations] = useState([]);
+
+  const {
+    items,
+    page,
+    totalPages,
+    loading,
+    error,
+    cacheInfo,
+    filters,
+    setError,
+    changePage,
+    updateFilters,
+  } = usePaginatedList({
+    tenantId: tenant?.tenant_id,
+    pageSize,
+    offlineMode,
+    cacheNamespace: 'inventory-purchases',
+    initialFilters: { location_id: '' },
+    fetchPage: async ({ page: nextPage, pageSize: nextPageSize, filters: nextFilters, tenantId }) => {
+      const offset = (nextPage - 1) * nextPageSize;
+      return listPurchases({
+        tenantId,
+        locationId: nextFilters?.location_id || null,
+        limit: nextPageSize,
+        offset,
+      });
+    },
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      if (!tenant?.tenant_id) return;
+      const result = await listLocations(tenant.tenant_id);
+      if (result.success) setLocations(result.data || []);
+    };
+    load();
+  }, [tenant?.tenant_id]);
+
+  const money =
+    formatMoney ||
+    ((value) => `$ ${Math.round(Number(value || 0)).toLocaleString('es-CO')}`);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.noticeBox}>
+        <Text style={styles.noticeText}>
+          Compras en mobile: consulta y seguimiento. Registro/edición avanzada se mantiene en web.
+        </Text>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+        <View style={styles.chipsRow}>
+          <Pressable
+            style={[styles.filterChip, !filters?.location_id && styles.filterChipActive]}
+            onPress={() => updateFilters({ location_id: '' })}
+          >
+            <Text style={[styles.filterChipText, !filters?.location_id && styles.filterChipTextActive]}>
+              Todas sedes
+            </Text>
+          </Pressable>
+          {locations.map((loc) => {
+            const active = filters?.location_id === loc.location_id;
+            return (
+              <Pressable
+                key={loc.location_id}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => updateFilters({ location_id: loc.location_id })}
+              >
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{loc.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      <PaginatedList
+        title="Compras"
+        loading={loading}
+        error={error}
+        items={items}
+        emptyText="No hay compras para este filtro."
+        page={page}
+        totalPages={totalPages}
+        onPrev={() => changePage(page - 1)}
+        onNext={() => changePage(page + 1)}
+        footerMeta={
+          cacheInfo?.source === 'cache' && cacheInfo?.cachedAt
+            ? `Offline cache: ${new Date(cacheInfo.cachedAt).toLocaleString()}`
+            : null
+        }
+        renderItem={(item) => (
+          <View key={item.purchase_id} style={styles.card}>
+            <Text style={styles.title}>{item.product_name || 'Producto'}</Text>
+            <Text style={styles.meta}>{item.sku || '-'} · {item.variant_name || '-'}</Text>
+            <Text style={styles.meta}>{item.location_name || 'Sin sede'} · {new Date(item.purchased_at).toLocaleString()}</Text>
+            <View style={styles.badgesRow}>
+              <View style={[styles.badge, { borderColor: '#0ea5e9' }]}>
+                <Text style={styles.badgeText}>Cant. {Number(item.quantity || 0).toLocaleString('es-CO')}</Text>
+              </View>
+              <View style={[styles.badge, { borderColor: '#f59e0b' }]}>
+                <Text style={styles.badgeText}>Costo {money(item.unit_cost || 0)}</Text>
+              </View>
+              <View style={[styles.badge, { borderColor: '#16a34a' }]}>
+                <Text style={styles.badgeText}>Total {money(item.line_total || 0)}</Text>
+              </View>
+            </View>
+            {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
+          </View>
+        )}
+      />
+
+      {offlineMode ? (
+        <Pressable style={styles.infoBtn} onPress={() => setError('Modo offline: solo consulta con cache local.') }>
+          <Text style={styles.infoBtnText}>Info offline</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
+  noticeBox: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#111827',
+    padding: 10,
+    marginBottom: 8,
+  },
+  noticeText: { color: '#cbd5e1', fontSize: 12 },
+  filtersScroll: { maxHeight: 44, marginBottom: 8 },
+  chipsRow: { flexDirection: 'row', gap: 6 },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#0b1220',
+  },
+  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipTextActive: { color: '#bae6fd' },
+  card: {
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  badge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#0f172a',
+  },
+  badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  note: { color: '#94a3b8', marginTop: 8, fontSize: 12 },
+  infoBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 72,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#334155',
+  },
+  infoBtnText: { color: '#e2e8f0', fontWeight: '700' },
+});
