@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import DatePickerField from '../components/DatePickerField';
 import { useThemeMode } from '../lib/themeMode';
 import { getSimpleCache, saveSimpleCache } from '../services/offlineCache.service';
 import { getReportsSnapshot, listReportLocations } from '../services/reports.service';
@@ -183,6 +184,26 @@ export default function ReportsScreen({
           </Pressable>
         </View>
       </ScrollView>
+
+      <View style={[styles.dateRangeCard, isLightTheme && styles.dateRangeCardLight]}>
+        <Text style={[styles.dateRangeTitle, isLightTheme && styles.dateRangeTitleLight]}>Rango de fechas</Text>
+        <View style={styles.dateRangeInputsRow}>
+          <DatePickerField
+            label="Desde"
+            value={fromDate}
+            onChange={setFromDate}
+            maximumDate={toDate || undefined}
+            style={styles.dateField}
+          />
+          <DatePickerField
+            label="Hasta"
+            value={toDate}
+            onChange={setToDate}
+            minimumDate={fromDate || undefined}
+            style={styles.dateField}
+          />
+        </View>
+      </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
         <View style={styles.chipsRow}>
@@ -527,6 +548,19 @@ const styles = StyleSheet.create({
   tabTextLight: { color: '#334155' },
   tabTextActive: { color: '#bae6fd' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
+  dateRangeCard: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    backgroundColor: '#0b1220',
+    padding: 10,
+    marginBottom: 8,
+  },
+  dateRangeCardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
+  dateRangeTitle: { color: '#e2e8f0', fontWeight: '700', fontSize: 14, marginBottom: 8 },
+  dateRangeTitleLight: { color: '#0f172a' },
+  dateRangeInputsRow: { flexDirection: 'row', gap: 8 },
+  dateField: { flex: 1 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
     borderWidth: 1,

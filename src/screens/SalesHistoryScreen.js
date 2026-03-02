@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import DatePickerField from '../components/DatePickerField';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
@@ -720,8 +721,6 @@ export default function SalesHistoryScreen({
     setProcessing(false);
   };
 
-  const normalizeDateInput = (value) => value.replace(/[^\d-]/g, '').slice(0, 10);
-
   const parseYmdToDate = (value) => {
     if (!value) return null;
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -807,23 +806,19 @@ export default function SalesHistoryScreen({
       <View style={[styles.dateRangeCard, isLightTheme && styles.dateRangeCardLight]}>
         <Text style={[styles.dateRangeTitle, isLightTheme && styles.dateRangeTitleLight]}>Rango de fechas</Text>
         <View style={styles.dateRangeInputsRow}>
-          <TextInput
+          <DatePickerField
+            label="Desde"
             value={fromDateInput}
-            onChangeText={(value) => setFromDateInput(normalizeDateInput(value))}
-            placeholder="Desde (YYYY-MM-DD)"
-            placeholderTextColor="#64748b"
-            style={[styles.input, isLightTheme && styles.inputLight, styles.dateInput]}
-            autoCapitalize="none"
-            autoCorrect={false}
+            onChange={setFromDateInput}
+            maximumDate={toDateInput || undefined}
+            style={styles.dateInput}
           />
-          <TextInput
+          <DatePickerField
+            label="Hasta"
             value={toDateInput}
-            onChangeText={(value) => setToDateInput(normalizeDateInput(value))}
-            placeholder="Hasta (YYYY-MM-DD)"
-            placeholderTextColor="#64748b"
-            style={[styles.input, isLightTheme && styles.inputLight, styles.dateInput]}
-            autoCapitalize="none"
-            autoCorrect={false}
+            onChange={setToDateInput}
+            minimumDate={fromDateInput || undefined}
+            style={styles.dateInput}
           />
         </View>
         <View style={styles.dateActionsRow}>
