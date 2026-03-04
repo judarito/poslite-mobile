@@ -38,6 +38,20 @@ import { listProducts } from './src/services/productsCatalog.service';
 import { getSales } from './src/services/sales.service';
 import { listCashSessions, listActiveCashRegisters } from './src/services/cashMenu.service';
 import {
+  getUnreadNotificationsCount,
+  listMyNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  subscribeMyNotifications,
+  unsubscribeNotifications,
+} from './src/services/notifications.service';
+import {
+  configurePushNotifications,
+  registerPushTokenForCurrentUser,
+  subscribeToPushForeground,
+  subscribeToPushResponses,
+} from './src/services/pushNotifications.service';
+import {
   getCurrentUserOpenSession,
   getPaymentMethodsForDropdown,
   warmCustomersCatalog,
@@ -102,8 +116,13 @@ export default function App() {
   const [themeMode, setThemeMode] = useState('dark');
   const [networkReachable, setNetworkReachable] = useState(true);
   const [error, setError] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   useEffect(() => {
+    configurePushNotifications();
     let mounted = true;
 
     const bootstrap = async () => {
@@ -186,6 +205,40 @@ export default function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!session || offlineMode || !tenant?.tenant_id || !userProfile?.user_id) return undefined;
+
+    let active = true;
+    registerPushTokenForCurrentUser({
+      tenantId: tenant.tenant_id,
+      userId: userProfile.user_id,
+    }).catch(() => null);
+
+    const responseSub = subscribeToPushResponses((response) => {
+      if (!active) return;
+      const data = response?.notification?.request?.content?.data || {};
+      const actionUrl = String(data?.action_url || '');
+      if (actionUrl.includes('/reports')) {
+        setCurrentScreen('Reports');
+      } else if (actionUrl.includes('/sales') || actionUrl.includes('/ventas')) {
+        setCurrentScreen('Sales');
+      } else if (actionUrl.includes('/point-of-sale') || actionUrl.includes('/pos')) {
+        setCurrentScreen('PointOfSale');
+      }
+    });
+
+    const foregroundSub = subscribeToPushForeground(() => {
+      if (!active) return;
+      refreshNotifications();
+    });
+
+    return () => {
+      active = false;
+      responseSub?.remove?.();
+      foregroundSub?.remove?.();
+    };
+  }, [session, offlineMode, tenant?.tenant_id, userProfile?.user_id]);
 
   useEffect(() => {
     let active = true;
@@ -273,6 +326,14 @@ export default function App() {
     }
   };
   const defaultPageSize = Number(tenantSettings?.default_page_size || 20);
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    try {
+      return new Date(value).toLocaleString();
+    } catch (_e) {
+      return String(value);
+    }
+  };
   const normalizeThemePreference = (value) => {
     const raw = String(value || '').trim().toLowerCase();
     if (raw === 'auto' || raw === 'system') return 'auto';
@@ -747,6 +808,84 @@ export default function App() {
     warmCriticalOfflineCaches(tenant.tenant_id, userProfile.user_id);
   }, [session, networkReachable, tenant?.tenant_id, userProfile?.user_id, defaultPageSize]);
 
+  const refreshNotifications = async () => {
+    if (!session || offlineMode) return;
+    const [listResult, unreadResult] = await Promise.all([
+      listMyNotifications({ limit: 40, offset: 0, onlyUnread: false }),
+      getUnreadNotificationsCount(),
+    ]);
+    if (listResult.success) setNotifications(listResult.data || []);
+    if (unreadResult.success) setUnreadNotifications(Number(unreadResult.data || 0));
+  };
+
+  const handleOpenNotifications = async () => {
+    setNotificationsOpen(true);
+    setLoadingNotifications(true);
+    try {
+      await refreshNotifications();
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  const handleMarkNotificationRead = async (notificationId) => {
+    if (!notificationId) return;
+    const result = await markNotificationRead(notificationId);
+    if (!result.success) return;
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.notification_id === notificationId
+          ? { ...item, is_read: true, read_at: item.read_at || new Date().toISOString() }
+          : item,
+      ),
+    );
+    setUnreadNotifications((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    const result = await markAllNotificationsRead();
+    if (!result.success) return;
+    const nowIso = new Date().toISOString();
+    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true, read_at: item.read_at || nowIso })));
+    setUnreadNotifications(0);
+  };
+
+  useEffect(() => {
+    if (!session || offlineMode || !tenant?.tenant_id || !userProfile?.user_id) return undefined;
+    let active = true;
+
+    refreshNotifications();
+
+    const channel = subscribeMyNotifications({
+      tenantId: tenant.tenant_id,
+      userId: userProfile.user_id,
+      onInsert: (row) => {
+        if (!active) return;
+        setNotifications((prev) => [row, ...prev.filter((x) => x.notification_id !== row.notification_id)].slice(0, 80));
+        if (!row?.is_read) setUnreadNotifications((prev) => prev + 1);
+      },
+      onUpdate: (nextRow) => {
+        if (!active) return;
+        setNotifications((prev) => {
+          const prevRow = prev.find((x) => x.notification_id === nextRow.notification_id);
+          if (prevRow) {
+            if (!prevRow.is_read && nextRow.is_read) {
+              setUnreadNotifications((count) => Math.max(0, count - 1));
+            } else if (prevRow.is_read && !nextRow.is_read) {
+              setUnreadNotifications((count) => count + 1);
+            }
+          }
+          return prev.map((x) => (x.notification_id === nextRow.notification_id ? { ...x, ...nextRow } : x));
+        });
+      },
+    });
+
+    return () => {
+      active = false;
+      unsubscribeNotifications(channel);
+    };
+  }, [session, offlineMode, tenant?.tenant_id, userProfile?.user_id]);
+
   const handleLogout = async () => {
     setError('');
     if (offlineMode && !session) {
@@ -768,6 +907,9 @@ export default function App() {
       setExpandedSections({});
       setMenuOpen(false);
       setLastMenuAction('');
+      setNotificationsOpen(false);
+      setNotifications([]);
+      setUnreadNotifications(0);
       return;
     }
 
@@ -797,6 +939,9 @@ export default function App() {
     setExpandedSections({});
     setMenuOpen(false);
     setLastMenuAction('');
+    setNotificationsOpen(false);
+    setNotifications([]);
+    setUnreadNotifications(0);
   };
 
   const handleUseOfflineMode = async () => {
@@ -826,6 +971,9 @@ export default function App() {
     setExpandedSections({});
     setLastMenuAction('');
     setOfflineMode(true);
+    setNotificationsOpen(false);
+    setNotifications([]);
+    setUnreadNotifications(0);
     const pendingCount = await getPendingOpsCount();
     setPendingOpsCount(pendingCount);
   };
@@ -845,6 +993,9 @@ export default function App() {
     setExpandedSections({});
     setMenuOpen(false);
     setLastMenuAction('');
+    setNotificationsOpen(false);
+    setNotifications([]);
+    setUnreadNotifications(0);
   };
 
   if (loadingBoot || loadingProfile) {
@@ -978,6 +1129,19 @@ export default function App() {
           {appBarTitleByScreen[currentScreen] || 'POSLite Mobile'}
         </Text>
         <View style={styles.appBarRight}>
+          <Pressable
+            onPress={handleOpenNotifications}
+            style={[styles.notificationsBtn, isLightTheme ? styles.notificationsBtnLight : null]}
+          >
+            <Text style={[styles.notificationsBtnText, isLightTheme ? styles.notificationsBtnTextLight : null]}>🔔</Text>
+            {unreadNotifications > 0 ? (
+              <View style={styles.notificationsBadge}>
+                <Text style={styles.notificationsBadgeText}>
+                  {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
           <View style={[styles.connectionChip, offlineMode ? styles.connectionChipOffline : styles.connectionChipOnline]}>
             <Text style={[styles.connectionDot, offlineMode ? styles.connectionDotOffline : styles.connectionDotOnline]}>
               ●
@@ -1062,6 +1226,76 @@ export default function App() {
                   </View>
                 );
               })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={notificationsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotificationsOpen(false)}
+      >
+        <View style={styles.menuOverlay}>
+          <Pressable style={styles.menuBackdrop} onPress={() => setNotificationsOpen(false)} />
+          <View style={[styles.notificationsModal, isLightTheme ? styles.notificationsModalLight : null]}>
+            <View style={styles.notificationsHeader}>
+              <Text style={[styles.notificationsTitle, isLightTheme ? styles.notificationsTitleLight : null]}>
+                Notificaciones
+              </Text>
+              <View style={styles.notificationsHeaderActions}>
+                <Pressable onPress={handleMarkAllNotificationsRead} style={styles.notificationsMarkAllBtn}>
+                  <Text style={styles.notificationsMarkAllText}>Marcar todas</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setNotificationsOpen(false)}
+                  style={[styles.notificationsCloseBtn, isLightTheme ? styles.notificationsCloseBtnLight : null]}
+                >
+                  <Text style={[styles.notificationsCloseText, isLightTheme ? styles.notificationsCloseTextLight : null]}>
+                    Cerrar
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.notificationsList}>
+              {loadingNotifications ? (
+                <Text style={[styles.notificationsEmpty, isLightTheme ? styles.notificationsEmptyLight : null]}>
+                  Cargando...
+                </Text>
+              ) : notifications.length === 0 ? (
+                <Text style={[styles.notificationsEmpty, isLightTheme ? styles.notificationsEmptyLight : null]}>
+                  No tienes notificaciones.
+                </Text>
+              ) : (
+                notifications.map((item) => (
+                  <Pressable
+                    key={item.notification_id}
+                    onPress={() => handleMarkNotificationRead(item.notification_id)}
+                    style={[
+                      styles.notificationItem,
+                      isLightTheme ? styles.notificationItemLight : null,
+                      !item.is_read ? styles.notificationItemUnread : null,
+                    ]}
+                  >
+                    <View style={styles.notificationTopRow}>
+                      <Text style={[styles.notificationSeverity, isLightTheme ? styles.notificationSeverityLight : null]}>
+                        {item.severity}
+                      </Text>
+                      <Text style={[styles.notificationDate, isLightTheme ? styles.notificationDateLight : null]}>
+                        {formatDateTime(item.created_at)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.notificationTitle, isLightTheme ? styles.notificationTitleLight : null]}>
+                      {item.title}
+                    </Text>
+                    <Text style={[styles.notificationMessage, isLightTheme ? styles.notificationMessageLight : null]}>
+                      {item.message}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1468,6 +1702,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  notificationsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#374151',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+    position: 'relative',
+  },
+  notificationsBtnLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#cbd5e1',
+  },
+  notificationsBtnText: {
+    color: '#e2e8f0',
+    fontSize: 14,
+  },
+  notificationsBtnTextLight: {
+    color: '#0f172a',
+  },
+  notificationsBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationsBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
   appBarBackBtn: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -1545,6 +1818,139 @@ const styles = StyleSheet.create({
   },
   menuDrawerDark: {
     backgroundColor: '#0f172a',
+  },
+  notificationsModal: {
+    width: '92%',
+    maxHeight: '78%',
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    borderWidth: 1,
+    borderRadius: 14,
+    alignSelf: 'center',
+    marginTop: 80,
+    paddingBottom: 12,
+  },
+  notificationsModalLight: {
+    backgroundColor: '#f8fafc',
+    borderColor: '#cbd5e1',
+  },
+  notificationsHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  notificationsHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notificationsTitle: {
+    color: '#e2e8f0',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  notificationsTitleLight: {
+    color: '#0f172a',
+  },
+  notificationsMarkAllBtn: {
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  notificationsMarkAllText: {
+    color: '#93c5fd',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  notificationsCloseBtn: {
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: '#1e293b',
+  },
+  notificationsCloseBtnLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+  },
+  notificationsCloseText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  notificationsCloseTextLight: {
+    color: '#334155',
+  },
+  notificationsList: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  notificationsEmpty: {
+    color: '#94a3b8',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  notificationsEmptyLight: {
+    color: '#475569',
+  },
+  notificationItem: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#111827',
+    padding: 10,
+    gap: 4,
+  },
+  notificationItemLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+  },
+  notificationItemUnread: {
+    borderColor: '#2563eb',
+  },
+  notificationTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notificationSeverity: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  notificationSeverityLight: {
+    color: '#1d4ed8',
+  },
+  notificationDate: {
+    color: '#94a3b8',
+    fontSize: 11,
+  },
+  notificationDateLight: {
+    color: '#64748b',
+  },
+  notificationTitle: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  notificationTitleLight: {
+    color: '#0f172a',
+  },
+  notificationMessage: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  notificationMessageLight: {
+    color: '#334155',
   },
   menuHeader: {
     flexDirection: 'row',
