@@ -229,6 +229,36 @@ export async function warmPosCatalog(tenantId, locationId = null, limit = 2000) 
   }
 }
 
+export async function listCatalogForInvoiceMatching(tenantId, locationId = null, limit = 3000) {
+  try {
+    const warm = await warmPosCatalog(tenantId, locationId, limit);
+    if (warm.success && Array.isArray(warm.data)) {
+      return { success: true, data: warm.data };
+    }
+
+    const [cachedByLocation, cachedGeneric] = await Promise.all([
+      getSimpleCache(catalogCacheKey(tenantId, locationId)),
+      getSimpleCache(catalogCacheKey(tenantId, null)),
+    ]);
+
+    const list = (cachedByLocation?.value || []).length
+      ? cachedByLocation.value
+      : (cachedGeneric?.value || []);
+
+    if (list.length > 0) {
+      return { success: true, data: list, source: 'cache' };
+    }
+
+    return {
+      success: false,
+      error: warm.error || 'No fue posible cargar catalogo para matching de factura.',
+      data: [],
+    };
+  } catch (error) {
+    return { success: false, error: error.message, data: [] };
+  }
+}
+
 export async function searchVariantsOffline(tenantId, search, limit = 20, locationId = null) {
   try {
     const [cachedByLocation, cachedGeneric] = await Promise.all([

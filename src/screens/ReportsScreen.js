@@ -143,7 +143,12 @@ export default function ReportsScreen({
         {loading ? <ActivityIndicator color="#38bdf8" style={{ marginTop: 8 }} /> : null}
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filtersScroll}
+        contentContainerStyle={styles.filtersContent}
+      >
         <View style={styles.tabRow}>
           {TABS.map((entry) => {
             const active = tab === entry.key;
@@ -160,7 +165,12 @@ export default function ReportsScreen({
         </View>
       </ScrollView>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filtersScroll}
+        contentContainerStyle={styles.filtersContent}
+      >
         <View style={styles.chipsRow}>
           {[
             { label: 'Hoy', days: 1 },
@@ -205,7 +215,12 @@ export default function ReportsScreen({
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filtersScroll}
+        contentContainerStyle={styles.filtersContent}
+      >
         <View style={styles.chipsRow}>
           <Pressable
             style={[styles.filterChip, isLightTheme && styles.filterChipLight, !locationId && styles.filterChipActive]}
@@ -532,22 +547,32 @@ const styles = StyleSheet.create({
   sourcePillServer: { borderColor: '#14532d', backgroundColor: '#052e16' },
   sourcePillCache: { borderColor: '#7c2d12', backgroundColor: '#431407' },
   sourcePillText: { color: '#e2e8f0', fontWeight: '700', fontSize: 11 },
-  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 2, alignItems: 'center' },
   tabBtn: {
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#111827',
+    minHeight: 40,
+    justifyContent: 'center',
     paddingVertical: 9,
     paddingHorizontal: 12,
     alignItems: 'center',
   },
   tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   tabBtnActive: { borderColor: '#38bdf8', backgroundColor: '#0a2842' },
-  tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabText: {
+    color: '#cbd5e1',
+    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
   tabTextLight: { color: '#334155' },
   tabTextActive: { color: '#bae6fd' },
-  filtersScroll: { maxHeight: 44, marginBottom: 8 },
+  filtersScroll: { marginBottom: 8 },
+  filtersContent: { alignItems: 'center', paddingVertical: 6 },
   dateRangeCard: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -561,18 +586,27 @@ const styles = StyleSheet.create({
   dateRangeTitleLight: { color: '#0f172a' },
   dateRangeInputsRow: { flexDirection: 'row', gap: 8 },
   dateField: { flex: 1 },
-  chipsRow: { flexDirection: 'row', gap: 6 },
+  chipsRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   filterChip: {
     borderWidth: 1,
     borderColor: '#334155',
     borderRadius: 999,
+    minHeight: 38,
+    justifyContent: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     backgroundColor: '#0b1220',
   },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
-  filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  filterChipText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
   filterChipTextLight: { color: '#334155' },
   filterChipTextActive: { color: '#bae6fd' },
   metaWrap: { marginBottom: 8, paddingHorizontal: 2 },

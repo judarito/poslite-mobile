@@ -28,7 +28,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "POSLite necesita acceso a la camara para escanear facturas.",
+          "photosPermission": "POSLite necesita acceso a fotos para seleccionar facturas."
+        }
+      ]
     ],
     "extra": {
       "eas": {

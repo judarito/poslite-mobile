@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useThemeMode } from '../lib/themeMode';
 
 let NativeDateTimePicker = null;
@@ -8,6 +8,26 @@ try {
 } catch (_error) {
   NativeDateTimePicker = null;
 }
+
+const WEB_INPUT_DARK_STYLE = {
+  width: '100%',
+  border: 'none',
+  outline: 'none',
+  backgroundColor: 'transparent',
+  color: '#f8fafc',
+  fontSize: 14,
+  minHeight: 30,
+};
+
+const WEB_INPUT_LIGHT_STYLE = {
+  width: '100%',
+  border: 'none',
+  outline: 'none',
+  backgroundColor: 'transparent',
+  color: '#0f172a',
+  fontSize: 14,
+  minHeight: 30,
+};
 
 function toYmd(date) {
   const d = new Date(date);
@@ -46,6 +66,7 @@ export default function DatePickerField({
 }) {
   const themeMode = useThemeMode();
   const isLightTheme = themeMode === 'light';
+  const isWeb = Platform.OS === 'web';
   const [open, setOpen] = useState(false);
   const [tempDate, setTempDate] = useState(fromYmd(value) || new Date());
 
@@ -53,6 +74,7 @@ export default function DatePickerField({
   const maxDate = useMemo(() => (maximumDate ? fromYmd(maximumDate) : null), [maximumDate]);
 
   const openPicker = () => {
+    if (isWeb) return;
     if (!NativeDateTimePicker) {
       Alert.alert(
         'DatePicker no disponible',
@@ -61,50 +83,66 @@ export default function DatePickerField({
       return;
     }
     setTempDate(fromYmd(value) || new Date());
-    setOpen(true);
-  };
-
-  const applyDate = () => {
-    onChange?.(toYmd(tempDate));
-    setOpen(false);
+    setOpen((prev) => !prev);
   };
 
   return (
     <View style={[styles.container, style]}>
       {label ? <Text style={[styles.label, isLightTheme && styles.labelLight]}>{label}</Text> : null}
-      <Pressable style={[styles.field, isLightTheme && styles.fieldLight]} onPress={openPicker}>
-        <Text style={[styles.value, isLightTheme && styles.valueLight, !value && styles.placeholder]}>
-          {value || placeholder}
-        </Text>
-      </Pressable>
-
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <View style={styles.overlay}>
-          <View style={[styles.modalCard, isLightTheme && styles.modalCardLight]}>
-            <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>{label || 'Seleccionar fecha'}</Text>
-            {NativeDateTimePicker ? (
-              <NativeDateTimePicker
-                value={tempDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_event, selected) => {
-                  if (selected) setTempDate(selected);
-                }}
-                minimumDate={minDate || undefined}
-                maximumDate={maxDate || undefined}
-              />
-            ) : null}
-            <View style={styles.actions}>
-              <Pressable style={[styles.btn, styles.cancelBtn]} onPress={() => setOpen(false)}>
-                <Text style={styles.btnText}>Cancelar</Text>
-              </Pressable>
-              <Pressable style={[styles.btn, styles.applyBtn]} onPress={applyDate}>
-                <Text style={styles.btnText}>Aplicar</Text>
-              </Pressable>
-            </View>
-          </View>
+      {isWeb ? (
+        // Web: usa input type="date" del navegador.
+        <View style={[styles.field, isLightTheme && styles.fieldLight, styles.webFieldWrap]}>
+          <input
+            type="date"
+            value={value || ''}
+            min={minimumDate || undefined}
+            max={maximumDate || undefined}
+            onChange={(event) => onChange?.(event?.target?.value || '')}
+            style={isLightTheme ? WEB_INPUT_LIGHT_STYLE : WEB_INPUT_DARK_STYLE}
+          />
         </View>
-      </Modal>
+      ) : !NativeDateTimePicker ? (
+        <TextInput
+          value={value || ''}
+          onChangeText={(text) => onChange?.(text)}
+          placeholder={placeholder}
+          placeholderTextColor="#64748b"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[styles.field, isLightTheme && styles.fieldLight, styles.manualInput, isLightTheme && styles.manualInputLight]}
+        />
+      ) : (
+        <Pressable style={[styles.field, isLightTheme && styles.fieldLight]} onPress={openPicker}>
+          <Text style={[styles.value, isLightTheme && styles.valueLight, !value && styles.placeholder]}>
+            {value || placeholder}
+          </Text>
+        </Pressable>
+      )}
+
+      {open && NativeDateTimePicker ? (
+        <View style={[styles.pickerWrap, isLightTheme && styles.pickerWrapLight]}>
+          <NativeDateTimePicker
+            value={tempDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            onChange={(event, selected) => {
+              if (event?.type === 'dismissed') {
+                setOpen(false);
+                return;
+              }
+              if (selected) {
+                setTempDate(selected);
+                onChange?.(toYmd(selected));
+              }
+              if (Platform.OS === 'android') {
+                setOpen(false);
+              }
+            }}
+            minimumDate={minDate || undefined}
+            maximumDate={maxDate || undefined}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -126,20 +164,20 @@ const styles = StyleSheet.create({
   value: { color: '#f8fafc', fontSize: 14 },
   valueLight: { color: '#0f172a' },
   placeholder: { color: '#64748b' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 16 },
-  modalCard: {
-    borderRadius: 12,
+  pickerWrap: {
+    marginTop: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#334155',
     backgroundColor: '#0f172a',
-    padding: 12,
+    overflow: 'hidden',
+    paddingVertical: Platform.OS === 'ios' ? 0 : 4,
   },
-  modalCardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
-  modalTitle: { color: '#f8fafc', fontSize: 16, fontWeight: '700', marginBottom: 8 },
-  modalTitleLight: { color: '#0f172a' },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  btn: { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 },
-  cancelBtn: { backgroundColor: '#334155' },
-  applyBtn: { backgroundColor: '#1d4ed8' },
-  btnText: { color: '#ffffff', fontWeight: '700' },
+  pickerWrapLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+  },
+  webFieldWrap: { paddingHorizontal: 8, paddingVertical: 4 },
+  manualInput: { color: '#f8fafc', paddingHorizontal: 10, paddingVertical: 10 },
+  manualInputLight: { color: '#0f172a' },
 });

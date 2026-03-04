@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   getCurrentUserOpenSession,
   getPaymentMethodsForDropdown,
   getTaxInfoForVariant,
+  listCatalogForInvoiceMatching,
   searchCustomers,
   searchCustomersOffline,
   searchVariantsOffline,
@@ -21,8 +23,62 @@ import {
   warmPosCatalog,
   warmCustomersCatalog,
 } from '../services/pos.service';
+import { analyzeInvoiceWithImage, matchInvoiceLinesToCatalog } from '../services/invoiceAgent.service';
 import { enqueuePendingOp, getPendingOpsCount } from '../storage/sqlite/database';
 import { getOrCreateDeviceId } from '../services/device.service';
+
+const OCR_MAX_BYTES = 980 * 1024;
+
+function estimateBase64Bytes(base64) {
+  const raw = String(base64 || '');
+  if (!raw) return 0;
+  return Math.ceil((raw.length * 3) / 4);
+}
+
+async function buildOptimizedImageForOcr(asset) {
+  if (!asset?.uri) {
+    return { success: false, error: 'No se pudo obtener URI de imagen.' };
+  }
+
+  let ImageManipulator;
+  try {
+    ImageManipulator = require('expo-image-manipulator');
+  } catch (_e) {
+    return {
+      success: false,
+      error: 'Falta expo-image-manipulator. Instala dependencia o toma una foto mas cercana.',
+    };
+  }
+
+  const widths = [1400, 1200, 1000, 800];
+  const qualities = [0.35, 0.22, 0.14, 0.1];
+
+  for (const width of widths) {
+    for (const quality of qualities) {
+      const result = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width } }],
+        {
+          compress: quality,
+          format: ImageManipulator.SaveFormat.JPEG,
+          base64: true,
+        },
+      );
+
+      if (result?.base64 && estimateBase64Bytes(result.base64) <= OCR_MAX_BYTES) {
+        return {
+          success: true,
+          data: { base64: result.base64, mimeType: 'image/jpeg' },
+        };
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: 'No se pudo reducir la foto por debajo de 1MB para OCR. Acerca mas la camara y evita fondo extra.',
+  };
+}
 
 function calculateDiscount(subtotal, discountValue, discountType) {
   const value = Number(discountValue || 0);
@@ -81,6 +137,43 @@ function isTransientNetworkError(message) {
   );
 }
 
+function normalizeMatchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scoreCustomerName(targetName, customer) {
+  const target = normalizeMatchText(targetName);
+  const candidate = normalizeMatchText(customer?.full_name || '');
+  if (!target || !candidate) return 0;
+  if (target === candidate) return 1;
+  if (candidate.includes(target) || target.includes(candidate)) return 0.92;
+
+  const targetTokens = target.split(' ').filter((t) => t.length > 1);
+  const candidateTokens = candidate.split(' ').filter((t) => t.length > 1);
+  if (!targetTokens.length || !candidateTokens.length) return 0;
+
+  const candidateSet = new Set(candidateTokens);
+  const common = targetTokens.filter((token) => candidateSet.has(token)).length;
+  return common / targetTokens.length;
+}
+
+function findBestCustomerMatch(targetName, customersList) {
+  const list = Array.isArray(customersList) ? customersList : [];
+  let best = null;
+  for (const c of list) {
+    const score = scoreCustomerName(targetName, c);
+    if (!best || score > best.score) best = { customer: c, score };
+  }
+  if (!best || best.score < 0.55) return null;
+  return best;
+}
+
 export default function PointOfSaleScreen({
   tenant,
   userProfile,
@@ -107,6 +200,8 @@ export default function PointOfSaleScreen({
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [processingInvoice, setProcessingInvoice] = useState(false);
+  const [invoiceScanSummary, setInvoiceScanSummary] = useState(null);
 
   const currency = tenant?.currency_code || 'COP';
   const roundingMethod = tenantSettings?.rounding_method || 'normal';
@@ -286,58 +381,200 @@ export default function PointOfSaleScreen({
     });
   };
 
-  const addToCart = async (variant) => {
+  const upsertVariantInCart = async ({ variant, quantity = 1, unitPrice = null }) => {
     setError('');
-    const existingIndex = cart.findIndex((line) => line.variant_id === variant.variant_id);
+    const qtyToAdd = Math.max(1, Math.round(Number(quantity || 1)));
+    const explicitUnitPrice = Number(unitPrice || 0);
+    const initialUnitPrice = explicitUnitPrice > 0 ? explicitUnitPrice : Number(variant.price || 0);
+    const taxResult = await getTaxInfoForVariant(tenant?.tenant_id, variant.variant_id);
 
-    if (existingIndex >= 0) {
-      const next = [...cart];
-      const line = { ...next[existingIndex] };
-      line.quantity += 1;
-      const lineSubtotal = line.quantity * line.unit_price;
-      const discountAmount = calculateDiscount(lineSubtotal, line.discount_line, line.discount_line_type);
-      line.discount = discountAmount;
-      applyLineTaxes(line, { success: true, rate: line.tax_rate, code: line.tax_code, name: line.tax_name }, lineSubtotal - discountAmount);
-      next[existingIndex] = line;
-      setCart(next);
-      upsertSinglePaymentIfNeeded(
-        next.reduce((sum, l) => sum + (l.line_total || 0), 0),
-      );
-      setSearch('');
-      setResults([]);
+    setCart((prev) => {
+      const next = [...prev];
+      const existingIndex = next.findIndex((line) => line.variant_id === variant.variant_id);
+
+      if (existingIndex >= 0) {
+        const line = { ...next[existingIndex] };
+        line.quantity += qtyToAdd;
+        if (explicitUnitPrice > 0) line.unit_price = explicitUnitPrice;
+        const lineSubtotal = line.quantity * line.unit_price;
+        const discountAmount = calculateDiscount(lineSubtotal, line.discount_line, line.discount_line_type);
+        line.discount = discountAmount;
+        applyLineTaxes(
+          line,
+          { success: true, rate: line.tax_rate, code: line.tax_code, name: line.tax_name },
+          lineSubtotal - discountAmount,
+        );
+        next[existingIndex] = line;
+      } else {
+        const line = {
+          variant_id: variant.variant_id,
+          sku: variant.sku,
+          productName: variant.product?.name || '',
+          variantName: variant.variant_name || '',
+          quantity: qtyToAdd,
+          unit_price: initialUnitPrice,
+          unit_cost: Number(variant.cost || 0),
+          price_includes_tax: Boolean(variant.price_includes_tax),
+          discount_line: 0,
+          discount_line_type: 'AMOUNT',
+          discount: 0,
+          base_amount: 0,
+          tax_amount: 0,
+          tax_rate: 0,
+          tax_code: null,
+          tax_name: null,
+          line_total: initialUnitPrice,
+        };
+        const lineSubtotal = line.quantity * line.unit_price;
+        applyLineTaxes(line, taxResult, lineSubtotal);
+        next.push(line);
+      }
+
+      upsertSinglePaymentIfNeeded(next.reduce((sum, l) => sum + (l.line_total || 0), 0));
+      return next;
+    });
+  };
+
+  const addToCart = async (variant) => {
+    await upsertVariantInCart({ variant, quantity: 1 });
+    setSearch('');
+    setResults([]);
+  };
+
+  const scanInvoiceWithAgent = async () => {
+    setError('');
+    setMessage('');
+    setInvoiceScanSummary(null);
+
+    if (offlineMode) {
+      setError('Escaneo de factura requiere conexion online.');
+      return;
+    }
+    if (!tenant?.tenant_id) {
+      setError('Tenant invalido para escaneo.');
       return;
     }
 
-    const line = {
-      variant_id: variant.variant_id,
-      sku: variant.sku,
-      productName: variant.product?.name || '',
-      variantName: variant.variant_name || '',
-      quantity: 1,
-      unit_price: Number(variant.price || 0),
-      unit_cost: Number(variant.cost || 0),
-      price_includes_tax: Boolean(variant.price_includes_tax),
-      discount_line: 0,
-      discount_line_type: 'AMOUNT',
-      discount: 0,
-      base_amount: 0,
-      tax_amount: 0,
-      tax_rate: 0,
-      tax_code: null,
-      tax_name: null,
-      line_total: Number(variant.price || 0),
+    let ImagePicker;
+    try {
+      ImagePicker = require('expo-image-picker');
+    } catch (_e) {
+      setError('Falta dependencia expo-image-picker. Instala y recompila la app.');
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission?.granted && Platform.OS !== 'web') {
+      setError('Permiso de camara denegado.');
+      return;
+    }
+
+    const pickerOptions = {
+      mediaTypes: ImagePicker.MediaTypeOptions?.Images ?? 'images',
+      allowsEditing: false,
+      quality: 0.6,
+      base64: false,
+      exif: false,
     };
 
-    const taxResult = await getTaxInfoForVariant(tenant?.tenant_id, line.variant_id);
-    const lineSubtotal = line.quantity * line.unit_price;
-    applyLineTaxes(line, taxResult, lineSubtotal);
-    const next = [...cart, line];
-    setCart(next);
-    upsertSinglePaymentIfNeeded(
-      next.reduce((sum, l) => sum + (l.line_total || 0), 0),
-    );
-    setSearch('');
-    setResults([]);
+    const capture = Platform.OS === 'web'
+      ? await ImagePicker.launchImageLibraryAsync(pickerOptions)
+      : await ImagePicker.launchCameraAsync(pickerOptions);
+
+    if (capture?.canceled) return;
+
+    const asset = capture?.assets?.[0];
+    if (!asset?.uri) {
+      setError('No se pudo obtener la imagen capturada.');
+      return;
+    }
+
+    setProcessingInvoice(true);
+    try {
+      const imageResult = await buildOptimizedImageForOcr(asset);
+      if (!imageResult.success) {
+        setError(imageResult.error || 'No fue posible optimizar la imagen para OCR.');
+        return;
+      }
+
+      const locationId = currentSession?.cash_register?.location_id || null;
+      const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
+      if (!catalogResult.success || !catalogResult.data?.length) {
+        setError(catalogResult.error || 'No hay catalogo disponible para matching.');
+        return;
+      }
+
+      const aiResult = await analyzeInvoiceWithImage({
+        tenantId: tenant.tenant_id,
+        imageBase64: imageResult.data.base64,
+        mimeType: imageResult.data.mimeType || 'image/jpeg',
+      });
+      if (!aiResult.success) {
+        setError(aiResult.error || 'No fue posible analizar la factura.');
+        return;
+      }
+
+      const { matched, unmatched } = matchInvoiceLinesToCatalog(
+        aiResult.data.line_items,
+        catalogResult.data,
+      );
+
+      const vendorName = String(aiResult?.data?.invoice?.vendor_name || '').trim();
+      let customerSuggestion = null;
+      let customerAutoloaded = false;
+      if (vendorName.length >= 2) {
+        const customerLookup = offlineMode
+          ? await searchCustomersOffline(tenant.tenant_id, vendorName, 20)
+          : await searchCustomers(tenant.tenant_id, vendorName, 20);
+        const customerList = customerLookup.success ? customerLookup.data || [] : [];
+        const bestCustomer = findBestCustomerMatch(vendorName, customerList);
+        if (bestCustomer?.customer) {
+          customerSuggestion = bestCustomer.customer;
+          if (!selectedCustomer?.customer_id) {
+            setSelectedCustomer(bestCustomer.customer);
+            setSearchCustomer(bestCustomer.customer.full_name || '');
+            setCustomers([]);
+            customerAutoloaded = true;
+          }
+        } else if (!selectedCustomer?.customer_id && customerList.length) {
+          setSearchCustomer(vendorName);
+          setCustomers(customerList.slice(0, 6));
+        }
+      }
+
+      if (!matched.length) {
+        setError('La IA leyó la factura pero no encontró coincidencias con tu catalogo.');
+        setInvoiceScanSummary({
+          matchedCount: 0,
+          unmatched,
+          invoice: aiResult.data.invoice || {},
+          customerSuggestion,
+          customerAutoloaded,
+        });
+        return;
+      }
+
+      for (const item of matched) {
+        await upsertVariantInCart({
+          variant: item.variant,
+          quantity: item.line.quantity || 1,
+          unitPrice: null,
+        });
+      }
+
+      setInvoiceScanSummary({
+        matchedCount: matched.length,
+        unmatched,
+        invoice: aiResult.data.invoice || {},
+        customerSuggestion,
+        customerAutoloaded,
+      });
+      setMessage(
+        `Factura procesada: ${matched.length} item(s) cargados al carrito${unmatched.length ? `, ${unmatched.length} sin match` : ''}.`,
+      );
+    } finally {
+      setProcessingInvoice(false);
+    }
   };
 
   const updateLineQuantity = (index, raw) => {
@@ -572,6 +809,17 @@ export default function PointOfSaleScreen({
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <View style={styles.invoiceAgentRow}>
+          <Pressable
+            onPress={scanInvoiceWithAgent}
+            disabled={processingInvoice}
+            style={[styles.invoiceAgentBtn, processingInvoice && styles.btnDisabled]}
+          >
+            <Text style={styles.invoiceAgentBtnText}>
+              {processingInvoice ? 'Analizando factura...' : 'Escanear factura (IA)'}
+            </Text>
+          </Pressable>
+        </View>
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -594,6 +842,32 @@ export default function PointOfSaleScreen({
             </Text>
           </Pressable>
         ))}
+        {invoiceScanSummary ? (
+          <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
+            <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
+              Lectura factura
+            </Text>
+            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+              Cargados: {invoiceScanSummary.matchedCount || 0}
+            </Text>
+            {invoiceScanSummary?.invoice?.vendor_name ? (
+              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                Proveedor: {invoiceScanSummary.invoice.vendor_name}
+              </Text>
+            ) : null}
+            {invoiceScanSummary?.customerSuggestion?.full_name ? (
+              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                Cliente sugerido: {invoiceScanSummary.customerSuggestion.full_name}
+                {invoiceScanSummary.customerAutoloaded ? ' (cargado)' : ''}
+              </Text>
+            ) : null}
+            {invoiceScanSummary?.unmatched?.length ? (
+              <Text style={styles.invoiceSummaryWarn}>
+                Sin match: {invoiceScanSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
@@ -823,6 +1097,53 @@ const styles = StyleSheet.create({
   panelLight: {
     backgroundColor: '#ffffff',
     borderColor: '#dbe4ef',
+  },
+  invoiceAgentRow: {
+    marginBottom: 8,
+  },
+  invoiceAgentBtn: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  invoiceAgentBtnText: {
+    color: '#eff6ff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  invoiceSummaryCard: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    padding: 8,
+    backgroundColor: '#0f172a',
+  },
+  invoiceSummaryCardLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+  },
+  invoiceSummaryTitle: {
+    color: '#bae6fd',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  invoiceSummaryTitleLight: {
+    color: '#0369a1',
+  },
+  invoiceSummaryLine: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  invoiceSummaryLineLight: {
+    color: '#334155',
+  },
+  invoiceSummaryWarn: {
+    color: '#fca5a5',
+    fontSize: 12,
+    marginTop: 4,
   },
   sectionTitle: {
     color: '#e2e8f0',
