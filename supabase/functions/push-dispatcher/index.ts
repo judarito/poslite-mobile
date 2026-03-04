@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
   const { data: rows, error: fetchError } = await supabase
     .from('notification_push_queue')
     .select(
-      'push_queue_id, push_device_id, expo_push_token, title, message, payload, attempts, status, next_attempt_at',
+      'push_queue_id, push_device_id, expo_push_token, title, message, payload, attempts, status, next_attempt_at, device:user_push_devices(is_active)',
     )
     .in('status', ['PENDING', 'RETRY'])
     .lte('next_attempt_at', new Date().toISOString())
@@ -79,15 +79,49 @@ Deno.serve(async (req) => {
 
   const queue = Array.isArray(rows) ? rows : [];
   if (!queue.length) {
-    return jsonResponse({ success: true, processed: 0, sent: 0, failed: 0, retried: 0 });
+    return jsonResponse({ success: true, processed: 0, sent: 0, failed: 0, retried: 0, skipped: 0 });
   }
 
   let sent = 0;
   let failed = 0;
   let retried = 0;
+  let skipped = 0;
 
   for (const row of queue) {
     const attempts = Number(row.attempts || 0);
+    const nowIso = new Date().toISOString();
+    const claimUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    // Claim atomico para evitar duplicados cuando hay ejecuciones concurrentes del dispatcher.
+    const { data: claimed, error: claimError } = await supabase
+      .from('notification_push_queue')
+      .update({ next_attempt_at: claimUntil })
+      .eq('push_queue_id', row.push_queue_id)
+      .eq('attempts', attempts)
+      .in('status', ['PENDING', 'RETRY'])
+      .lte('next_attempt_at', nowIso)
+      .select('push_queue_id')
+      .maybeSingle();
+
+    if (claimError || !claimed) {
+      skipped += 1;
+      continue;
+    }
+
+    const isDeviceInactive = row?.device && (row.device as { is_active?: boolean }).is_active === false;
+    if (isDeviceInactive) {
+      await supabase
+        .from('notification_push_queue')
+        .update({
+          status: 'FAILED',
+          attempts: attempts + 1,
+          last_error: 'Push device inactive',
+        })
+        .eq('push_queue_id', row.push_queue_id);
+      failed += 1;
+      continue;
+    }
+
     const expoPayload = {
       to: row.expo_push_token,
       title: row.title,
@@ -194,5 +228,6 @@ Deno.serve(async (req) => {
     sent,
     failed,
     retried,
+    skipped,
   });
 });

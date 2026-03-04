@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -30,6 +31,24 @@ export default function CashAssignmentsScreen({ tenant, userProfile, offlineMode
     cash_register_id: null,
     note: '',
   });
+  const userSelectOptions = useMemo(
+    () =>
+      (users || []).map((u) => ({
+        key: u.user_id,
+        label: u.full_name || 'Usuario',
+        searchText: u.full_name || '',
+      })),
+    [users],
+  );
+  const registerSelectOptions = useMemo(
+    () =>
+      (registers || []).map((r) => ({
+        key: r.cash_register_id,
+        label: `${r.name} (${r.location?.name || 'Sin sede'})`,
+        searchText: `${r.name} ${r.location?.name || ''}`,
+      })),
+    [registers],
+  );
 
   const {
     items,
@@ -316,47 +335,29 @@ export default function CashAssignmentsScreen({ tenant, userProfile, offlineMode
             <ScrollView>
               <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Asignar caja</Text>
 
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Cajero</Text>
-              {users.map((u) => {
-                const active = newAssignment.user_id === u.user_id;
-                return (
-                  <Pressable
-                    key={u.user_id}
-                    style={[
-                      styles.option,
-                      isLightTheme && styles.optionLight,
-                      active && styles.optionActive,
-                      active && isLightTheme && styles.optionActiveLight,
-                    ]}
-                    onPress={() => setNewAssignment((prev) => ({ ...prev, user_id: u.user_id }))}
-                  >
-                    <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive, active && isLightTheme && styles.optionTextActiveLight]}>{u.full_name}</Text>
-                  </Pressable>
-                );
-              })}
+              <SearchableSelectField
+                title="Cajero"
+                themeMode={themeMode}
+                valueLabel="Seleccionar cajero"
+                clearLabel="Sin cajero"
+                placeholder="Seleccionar cajero"
+                searchPlaceholder="Buscar cajero..."
+                options={userSelectOptions}
+                selectedKey={newAssignment.user_id}
+                onSelect={(nextValue) => setNewAssignment((prev) => ({ ...prev, user_id: nextValue }))}
+              />
 
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Caja</Text>
-              {registers.map((r) => {
-                const active = newAssignment.cash_register_id === r.cash_register_id;
-                return (
-                  <Pressable
-                    key={r.cash_register_id}
-                    style={[
-                      styles.option,
-                      isLightTheme && styles.optionLight,
-                      active && styles.optionActive,
-                      active && isLightTheme && styles.optionActiveLight,
-                    ]}
-                    onPress={() =>
-                      setNewAssignment((prev) => ({ ...prev, cash_register_id: r.cash_register_id }))
-                    }
-                  >
-                    <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive, active && isLightTheme && styles.optionTextActiveLight]}>
-                      {r.name} ({r.location?.name || 'Sin sede'})
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              <SearchableSelectField
+                title="Caja"
+                themeMode={themeMode}
+                valueLabel="Seleccionar caja"
+                clearLabel="Sin caja"
+                placeholder="Seleccionar caja"
+                searchPlaceholder="Buscar caja..."
+                options={registerSelectOptions}
+                selectedKey={newAssignment.cash_register_id}
+                onSelect={(nextValue) => setNewAssignment((prev) => ({ ...prev, cash_register_id: nextValue }))}
+              />
 
               <Pressable style={[styles.primaryBtn, isLightTheme && styles.primaryBtnLight]} onPress={saveAssignment} disabled={saving}>
                 <Text style={[styles.primaryBtnText, isLightTheme && styles.primaryBtnTextLight]}>{saving ? 'Guardando...' : 'Guardar'}</Text>

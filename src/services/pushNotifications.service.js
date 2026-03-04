@@ -91,6 +91,9 @@ export async function registerPushTokenForCurrentUser({ tenantId, userId }) {
       Constants?.expoConfig?.extra?.eas?.projectId ||
       Constants?.easConfig?.projectId ||
       undefined;
+    const appVersion = String(Constants?.expoConfig?.version || '');
+    const appOwnership = String(Constants?.appOwnership || Constants?.executionEnvironment || 'unknown');
+    const deviceUid = String(Device?.osBuildId || Device?.modelId || '');
 
     const tokenResult = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined,
@@ -105,12 +108,25 @@ export async function registerPushTokenForCurrentUser({ tenantId, userId }) {
       p_expo_push_token: expoPushToken,
       p_platform: Platform.OS || 'unknown',
       p_device_name: Device?.deviceName || null,
-      p_app_version: Constants?.expoConfig?.version || null,
-      p_device_uid: String(Device?.osBuildId || Device?.modelId || ''),
+      p_app_version: appVersion ? `${appVersion} (${appOwnership})` : appOwnership,
+      p_device_uid: deviceUid,
     });
 
     if (error) {
       return { success: false, error: error.message };
+    }
+
+    // Mantiene solo el token activo mas reciente por dispositivo para reducir duplicados.
+    if (deviceUid) {
+      await supabase
+        .from('user_push_devices')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('platform', Platform.OS || 'unknown')
+        .eq('device_uid', deviceUid)
+        .neq('expo_push_token', expoPushToken)
+        .eq('is_active', true);
     }
 
     return {

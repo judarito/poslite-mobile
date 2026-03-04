@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -35,6 +36,15 @@ export default function CashSessionsScreen({
   const [selectedSession, setSelectedSession] = useState(null);
   const [movementRows, setMovementRows] = useState([]);
   const [closeSummary, setCloseSummary] = useState(null);
+  const registerSelectOptions = useMemo(
+    () =>
+      (registers || []).map((r) => ({
+        key: r.cash_register_id,
+        label: `${r.name} (${r.location?.name || 'Sin sede'})`,
+        searchText: `${r.name} ${r.location?.name || ''}`,
+      })),
+    [registers],
+  );
 
   const [openData, setOpenData] = useState({ cash_register_id: null, opening_amount: '0' });
   const [closeData, setCloseData] = useState({ counted: '' });
@@ -319,26 +329,17 @@ export default function CashSessionsScreen({
           <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             <ScrollView>
               <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>Abrir sesion de caja</Text>
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Caja registradora</Text>
-              {registers.map((r) => {
-                const active = openData.cash_register_id === r.cash_register_id;
-                return (
-                  <Pressable
-                    key={r.cash_register_id}
-                    style={[
-                      styles.option,
-                      isLightTheme && styles.optionLight,
-                      active && styles.optionActive,
-                      active && isLightTheme && styles.optionActiveLight,
-                    ]}
-                    onPress={() => setOpenData((prev) => ({ ...prev, cash_register_id: r.cash_register_id }))}
-                  >
-                    <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive, active && isLightTheme && styles.optionTextActiveLight]}>
-                      {r.name} ({r.location?.name || 'Sin sede'})
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              <SearchableSelectField
+                title="Caja registradora"
+                themeMode={themeMode}
+                valueLabel="Seleccionar caja"
+                clearLabel="Sin caja"
+                placeholder="Seleccionar caja"
+                searchPlaceholder="Buscar caja..."
+                options={registerSelectOptions}
+                selectedKey={openData.cash_register_id}
+                onSelect={(nextValue) => setOpenData((prev) => ({ ...prev, cash_register_id: nextValue }))}
+              />
 
               <TextInput
                 style={[styles.input, isLightTheme && styles.inputLight]}

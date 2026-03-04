@@ -3,7 +3,7 @@
     "name": "POSLite",
     "slug": "poslite-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
@@ -27,7 +27,14 @@
     },
     "plugins": [
       "expo-sqlite",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#2563EB",
+          "defaultChannel": "default"
+        }
+      ],
       [
         "expo-image-picker",
         {

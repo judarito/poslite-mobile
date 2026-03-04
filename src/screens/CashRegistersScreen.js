@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -26,6 +27,15 @@ export default function CashRegistersScreen({ tenant, offlineMode, pageSize = 20
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [locations, setLocations] = useState([]);
+  const locationSelectOptions = useMemo(
+    () =>
+      (locations || []).map((loc) => ({
+        key: loc.location_id,
+        label: loc.name,
+        searchText: loc.name,
+      })),
+    [locations],
+  );
 
   const {
     items,
@@ -209,24 +219,17 @@ export default function CashRegistersScreen({ tenant, offlineMode, pageSize = 20
                 placeholder="Nombre *"
                 placeholderTextColor="#64748b"
               />
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Sede</Text>
-              {(locations || []).map((loc) => {
-                const active = form.location_id === loc.location_id;
-                return (
-                  <Pressable
-                    key={loc.location_id}
-                    style={[
-                      styles.option,
-                      isLightTheme && styles.optionLight,
-                      active && styles.optionActive,
-                      active && isLightTheme && styles.optionActiveLight,
-                    ]}
-                    onPress={() => setForm((prev) => ({ ...prev, location_id: loc.location_id }))}
-                  >
-                    <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive, active && isLightTheme && styles.optionTextActiveLight]}>{loc.name}</Text>
-                  </Pressable>
-                );
-              })}
+              <SearchableSelectField
+                title="Sede"
+                themeMode={themeMode}
+                valueLabel="Seleccionar sede"
+                clearLabel="Sin sede"
+                placeholder="Seleccionar sede"
+                searchPlaceholder="Buscar sede..."
+                options={locationSelectOptions}
+                selectedKey={form.location_id}
+                onSelect={(nextValue) => setForm((prev) => ({ ...prev, location_id: nextValue }))}
+              />
 
               <Pressable
                 style={[

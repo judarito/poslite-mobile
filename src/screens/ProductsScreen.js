@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import { listActiveUnits } from '../services/units.service';
@@ -43,6 +44,24 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
+  const categorySelectOptions = useMemo(
+    () =>
+      (categoryOptions || []).map((cat) => ({
+        key: cat.category_id,
+        label: cat.name,
+        searchText: cat.name,
+      })),
+    [categoryOptions],
+  );
+  const unitSelectOptions = useMemo(
+    () =>
+      (unitOptions || []).map((unit) => ({
+        key: unit.unit_id,
+        label: `${unit.code} - ${unit.name}${unit.is_system ? ' (sistema)' : ''}`,
+        searchText: `${unit.code} ${unit.name}`,
+      })),
+    [unitOptions],
+  );
 
   const {
     items: rows,
@@ -177,12 +196,6 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
     ]);
   };
 
-  const renderSelectorOption = (label, active, onPress) => (
-    <Pressable style={[styles.selectorOption, isLightTheme && styles.selectorOptionLight, active && styles.selectorOptionActive]} onPress={onPress}>
-      <Text style={[styles.selectorText, isLightTheme && styles.selectorTextLight, active && styles.selectorTextActive]}>{label}</Text>
-    </Pressable>
-  );
-
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.tabRow}>
@@ -311,27 +324,29 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 </Pressable>
               </View>
 
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Categoria</Text>
-              {renderSelectorOption('Sin categoria', form.category_id === null, () =>
-                setForm((prev) => ({ ...prev, category_id: null })),
-              )}
-              {(categoryOptions || []).map((cat) =>
-                renderSelectorOption(cat.name, form.category_id === cat.category_id, () =>
-                  setForm((prev) => ({ ...prev, category_id: cat.category_id })),
-                ),
-              )}
+              <SearchableSelectField
+                title="Categoria"
+                themeMode={themeMode}
+                valueLabel="Sin categoria"
+                clearLabel="Sin categoria"
+                placeholder="Seleccionar categoria"
+                searchPlaceholder="Buscar categoria..."
+                options={categorySelectOptions}
+                selectedKey={form.category_id}
+                onSelect={(nextValue) => setForm((prev) => ({ ...prev, category_id: nextValue }))}
+              />
 
-              <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Unidad de medida</Text>
-              {renderSelectorOption('Sin unidad', form.unit_id === null, () =>
-                setForm((prev) => ({ ...prev, unit_id: null })),
-              )}
-              {(unitOptions || []).map((unit) =>
-                renderSelectorOption(
-                  `${unit.code} - ${unit.name}${unit.is_system ? ' (sistema)' : ''}`,
-                  form.unit_id === unit.unit_id,
-                  () => setForm((prev) => ({ ...prev, unit_id: unit.unit_id })),
-                ),
-              )}
+              <SearchableSelectField
+                title="Unidad de medida"
+                themeMode={themeMode}
+                valueLabel="Sin unidad"
+                clearLabel="Sin unidad"
+                placeholder="Seleccionar unidad"
+                searchPlaceholder="Buscar unidad..."
+                options={unitSelectOptions}
+                selectedKey={form.unit_id}
+                onSelect={(nextValue) => setForm((prev) => ({ ...prev, unit_id: nextValue }))}
+              />
 
               <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Configuracion</Text>
               <View style={styles.switchRowWrap}>
@@ -518,20 +533,6 @@ const styles = StyleSheet.create({
   toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
   toggleBtnTextLight: { color: '#334155' },
   toggleBtnTextActive: { color: '#bfdbfe' },
-  selectorOption: {
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: '#111827',
-    marginTop: 8,
-  },
-  selectorOptionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  selectorOptionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
-  selectorText: { color: '#cbd5e1', fontWeight: '600' },
-  selectorTextLight: { color: '#334155' },
-  selectorTextActive: { color: '#bae6fd' },
   switchRowWrap: { gap: 8, marginTop: 8 },
   switchCard: {
     borderWidth: 1,
