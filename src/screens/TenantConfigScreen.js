@@ -88,9 +88,6 @@ export default function TenantConfigScreen({ tenant, offlineMode, themeMode = 'd
       return;
     }
 
-    if (onLocalThemeChange) {
-      await onLocalThemeChange(settingsForm.theme || 'dark');
-    }
     setSaving(false);
     await load();
   };

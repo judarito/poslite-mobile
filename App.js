@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import {
+  BackHandler,
   AppState,
   Appearance,
   ActivityIndicator,
@@ -8,6 +10,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  Switch,
   StatusBar as RNStatusBar,
   SafeAreaView,
   ScrollView,
@@ -32,7 +35,11 @@ import { annotateMenuTreeWithSupport } from './src/navigation/menuMapper';
 import { fetchUserMenus, isFreshCache } from './src/services/menu.service';
 import { getDashboardSummary } from './src/services/reports.service';
 import { syncPendingOperations } from './src/services/sync.service';
-import { getTenantSettings, setCachedTenantTheme } from './src/services/tenantSettings.service';
+import {
+  getCachedUserThemePreference,
+  getTenantSettings,
+  setCachedUserThemePreference,
+} from './src/services/tenantSettings.service';
 import { savePageCache } from './src/services/offlineCache.service';
 import { listProducts } from './src/services/productsCatalog.service';
 import { getSales } from './src/services/sales.service';
@@ -111,6 +118,7 @@ export default function App() {
   const [tenantSettings, setTenantSettings] = useState({});
   const [lastMenuAction, setLastMenuAction] = useState('');
   const [currentScreen, setCurrentScreen] = useState('Home');
+  const [screenHistory, setScreenHistory] = useState([]);
   const [reportsInitialTab, setReportsInitialTab] = useState('sales');
   const [themePreference, setThemePreference] = useState('dark');
   const [themeMode, setThemeMode] = useState('dark');
@@ -120,6 +128,42 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  const navigateToScreen = useCallback((nextScreen, options = {}) => {
+    const { reset = false } = options;
+    const target = String(nextScreen || '').trim();
+    if (!target) return;
+
+    if (reset) {
+      setScreenHistory([]);
+      setCurrentScreen(target);
+      return;
+    }
+
+    setCurrentScreen((prevScreen) => {
+      if (target === prevScreen) return prevScreen;
+      setScreenHistory((prevHistory) => [...prevHistory, prevScreen].slice(-50));
+      return target;
+    });
+  }, []);
+
+  const resetToHome = useCallback(() => {
+    setScreenHistory([]);
+    setCurrentScreen('Home');
+  }, []);
+
+  const goBack = useCallback(() => {
+    setScreenHistory((prev) => {
+      if (!prev.length) {
+        setCurrentScreen('Home');
+        return prev;
+      }
+      const next = [...prev];
+      const previousScreen = next.pop() || 'Home';
+      setCurrentScreen(previousScreen);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     configurePushNotifications();
@@ -161,7 +205,10 @@ export default function App() {
         if (cached) {
           setUserProfile(cached.userProfile);
           setTenant(cached.tenant);
-          await loadTenantConfig(cached?.tenant?.tenant_id, { forceOffline: true });
+          await loadTenantConfig(cached?.tenant?.tenant_id, {
+            forceOffline: true,
+            userId: cached?.userProfile?.user_id,
+          });
           setOfflineMode(true);
           if (cachedMenu?.menuTree) {
             setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
@@ -189,6 +236,7 @@ export default function App() {
         setPaymentMethodsSeries([]);
         setTenantSettings({});
         setCurrentScreen('Home');
+        setScreenHistory([]);
         setReportsInitialTab('sales');
         setThemePreference('dark');
         setThemeMode('dark');
@@ -220,11 +268,11 @@ export default function App() {
       const data = response?.notification?.request?.content?.data || {};
       const actionUrl = String(data?.action_url || '');
       if (actionUrl.includes('/reports')) {
-        setCurrentScreen('Reports');
+        navigateToScreen('Reports');
       } else if (actionUrl.includes('/sales') || actionUrl.includes('/ventas')) {
-        setCurrentScreen('Sales');
+        navigateToScreen('Sales');
       } else if (actionUrl.includes('/point-of-sale') || actionUrl.includes('/pos')) {
-        setCurrentScreen('PointOfSale');
+        navigateToScreen('PointOfSale');
       }
     });
 
@@ -238,7 +286,7 @@ export default function App() {
       responseSub?.remove?.();
       foregroundSub?.remove?.();
     };
-  }, [session, offlineMode, tenant?.tenant_id, userProfile?.user_id]);
+  }, [session, offlineMode, tenant?.tenant_id, userProfile?.user_id, navigateToScreen]);
 
   useEffect(() => {
     let active = true;
@@ -296,6 +344,29 @@ export default function App() {
     const shouldBeOffline = !networkReachable;
     setOfflineMode(shouldBeOffline);
   }, [session, networkReachable]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    if (!session && !offlineMode) return undefined;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        return true;
+      }
+      if (notificationsOpen) {
+        setNotificationsOpen(false);
+        return true;
+      }
+      if (currentScreen !== 'Home') {
+        goBack();
+        return true;
+      }
+      return false;
+    });
+
+    return () => sub.remove();
+  }, [session, offlineMode, menuOpen, notificationsOpen, currentScreen, goBack]);
 
   const userEmail = useMemo(() => session?.user?.email ?? '', [session]);
   const rolesText = useMemo(() => {
@@ -423,7 +494,7 @@ export default function App() {
     setPendingOpsCount(pendingCount);
   };
 
-  const loadTenantConfig = async (tenantId, { forceOffline = false } = {}) => {
+  const loadTenantConfig = async (tenantId, { forceOffline = false, userId = null } = {}) => {
     if (!tenantId) {
       setTenantSettings({});
       return;
@@ -436,9 +507,24 @@ export default function App() {
     if (result.success) {
       const nextSettings = result.data || {};
       setTenantSettings(nextSettings);
-      const nextPreference = normalizeThemePreference(nextSettings.theme);
-      setThemePreference(nextPreference);
-      setThemeMode(resolveThemeMode(nextPreference));
+      const tenantDefaultTheme = normalizeThemePreference(nextSettings.theme);
+      let effectiveTheme = tenantDefaultTheme;
+
+      if (userId) {
+        const cachedThemeResult = await getCachedUserThemePreference(tenantId, userId);
+        const cachedTheme = cachedThemeResult?.data?.theme
+          ? normalizeThemePreference(cachedThemeResult.data.theme)
+          : null;
+
+        if (cachedTheme) {
+          effectiveTheme = cachedTheme;
+        } else {
+          await setCachedUserThemePreference(tenantId, userId, tenantDefaultTheme);
+        }
+      }
+
+      setThemePreference(effectiveTheme);
+      setThemeMode(resolveThemeMode(effectiveTheme));
       return;
     }
 
@@ -548,7 +634,9 @@ export default function App() {
     setThemeMode(resolveThemeMode(normalizedPreference));
     setTenantSettings((prev) => ({ ...(prev || {}), theme: normalizedPreference }));
     if (tenant?.tenant_id) {
-      await setCachedTenantTheme(tenant.tenant_id, normalizedPreference);
+      if (userProfile?.user_id) {
+        await setCachedUserThemePreference(tenant.tenant_id, userProfile.user_id, normalizedPreference);
+      }
     }
   };
 
@@ -574,7 +662,7 @@ export default function App() {
     setError('');
 
     if (item.route === '/' || item.targetScreen === 'Home') {
-      setCurrentScreen('Home');
+      resetToHome();
       setLastMenuAction('');
       setMenuOpen(false);
       return;
@@ -625,7 +713,7 @@ export default function App() {
         else if (route.includes('/reports/produccion')) setReportsInitialTab('production');
         else setReportsInitialTab('sales');
       }
-      setCurrentScreen(item.targetScreen);
+      navigateToScreen(item.targetScreen);
       setLastMenuAction('');
       setMenuOpen(false);
       return;
@@ -739,7 +827,10 @@ export default function App() {
             'Sesion iniciada, pero no fue posible cargar el menu dinamico.',
         );
       }
-      await loadTenantConfig(tenantData?.tenant_id, { forceOffline: false });
+      await loadTenantConfig(tenantData?.tenant_id, {
+        forceOffline: false,
+        userId: enriched?.user_id,
+      });
       await loadDashboard(tenantData?.tenant_id);
       await warmCriticalOfflineCaches(tenantData?.tenant_id, enriched?.user_id);
     } catch (e) {
@@ -898,7 +989,7 @@ export default function App() {
       setTopProducts([]);
       setPaymentMethodsSeries([]);
       setTenantSettings({});
-      setCurrentScreen('Home');
+      resetToHome();
       setReportsInitialTab('sales');
       setThemePreference('dark');
       setThemeMode('dark');
@@ -930,7 +1021,7 @@ export default function App() {
     setDailySeries([]);
     setTopProducts([]);
     setPaymentMethodsSeries([]);
-    setCurrentScreen('Home');
+    resetToHome();
     setReportsInitialTab('sales');
     setThemePreference('dark');
     setThemeMode('dark');
@@ -954,12 +1045,15 @@ export default function App() {
     }
     setUserProfile(cached.userProfile);
     setTenant(cached.tenant);
-    await loadTenantConfig(cached?.tenant?.tenant_id, { forceOffline: true });
+    await loadTenantConfig(cached?.tenant?.tenant_id, {
+      forceOffline: true,
+      userId: cached?.userProfile?.user_id,
+    });
     setKpis(null);
     setDailySeries([]);
     setTopProducts([]);
     setPaymentMethodsSeries([]);
-    setCurrentScreen('Home');
+    resetToHome();
     setCachedAt(cached.cachedAt);
     if (cachedMenu?.menuTree) {
       setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
@@ -986,7 +1080,7 @@ export default function App() {
     setTenantSettings({});
     setMenuTree([]);
     setMenuCachedAt('');
-    setCurrentScreen('Home');
+    resetToHome();
     setReportsInitialTab('sales');
     setThemePreference('dark');
     setThemeMode('dark');
@@ -1108,6 +1202,7 @@ export default function App() {
     About: 'Acerca de',
   };
   const isLightTheme = themeMode === 'light';
+  const isLocalLightMode = themeMode === 'light';
 
   return (
     <ThemeModeProvider mode={themeMode}>
@@ -1151,8 +1246,13 @@ export default function App() {
             </Text>
           </View>
           {currentScreen !== 'Home' ? (
-            <Pressable onPress={() => setCurrentScreen('Home')} style={[styles.appBarBackBtn, isLightTheme ? styles.appBarBackBtnLight : null]}>
-              <Text style={[styles.appBarBackText, isLightTheme ? styles.appBarBackTextLight : null]}>Inicio</Text>
+            <Pressable onPress={goBack} style={[styles.appBarBackBtn, isLightTheme ? styles.appBarBackBtnLight : null]}>
+              <Ionicons
+                name="chevron-back"
+                size={14}
+                style={[styles.appBarBackIcon, isLightTheme ? styles.appBarBackIconLight : null]}
+              />
+              <Text style={[styles.appBarBackText, isLightTheme ? styles.appBarBackTextLight : null]}>Atras</Text>
             </Pressable>
           ) : null}
         </View>
@@ -1451,7 +1551,7 @@ export default function App() {
           initialTab={reportsInitialTab}
         />
       ) : currentScreen === 'Setup' ? (
-        <SetupScreen onOpenScreen={setCurrentScreen} themeMode={themeMode} />
+        <SetupScreen onOpenScreen={navigateToScreen} themeMode={themeMode} />
       ) : currentScreen === 'TenantConfig' ? (
         <TenantConfigScreen
           tenant={tenant}
@@ -1502,6 +1602,56 @@ export default function App() {
               {offlineMode ? 'Offline activo' : 'Online'} · {loadingMenu ? 'Menu cargando' : 'Menu listo'}
             </Text>
           </View>
+
+          <View style={[styles.themeSwitchCard, isLightTheme && styles.themeSwitchCardLight]}>
+            <View style={styles.themeSwitchTextWrap}>
+              <Text style={[styles.themeSwitchTitle, isLightTheme && styles.themeSwitchTitleLight]}>
+                Tema local
+              </Text>
+              <Text style={[styles.themeSwitchSubtitle, isLightTheme && styles.themeSwitchSubtitleLight]}>
+                Se guarda en cache del dispositivo para tu usuario
+              </Text>
+            </View>
+            <View style={styles.themeSwitchControlWrap}>
+              <Text style={[styles.themeSwitchMode, isLightTheme && styles.themeSwitchModeLight]}>
+                {isLocalLightMode ? 'Claro' : 'Oscuro'}
+              </Text>
+              <Switch
+                value={isLocalLightMode}
+                onValueChange={(enabled) => handleLocalThemeChange(enabled ? 'light' : 'dark')}
+                thumbColor={isLocalLightMode ? '#ffffff' : '#e2e8f0'}
+                trackColor={{ false: '#64748b', true: '#38bdf8' }}
+              />
+            </View>
+          </View>
+
+          <Pressable
+            onPress={() => navigateToScreen('PointOfSale')}
+            style={[styles.quickSaleBtn, isLightTheme && styles.quickSaleBtnLight]}
+          >
+            <View style={styles.quickSaleContent}>
+              <View style={[styles.quickSaleIconWrap, isLightTheme && styles.quickSaleIconWrapLight]}>
+                <Ionicons
+                  name="storefront-outline"
+                  size={20}
+                  style={[styles.quickSaleIcon, isLightTheme && styles.quickSaleIconLight]}
+                />
+              </View>
+              <View style={styles.quickSaleTextWrap}>
+                <Text style={[styles.quickSaleBtnText, isLightTheme && styles.quickSaleBtnTextLight]}>
+                  Ir a Punto de Venta
+                </Text>
+                <Text style={[styles.quickSaleHint, isLightTheme && styles.quickSaleHintLight]}>
+                  Registrar venta rapida
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                style={[styles.quickSaleChevron, isLightTheme && styles.quickSaleChevronLight]}
+              />
+            </View>
+          </Pressable>
 
           <View style={[styles.kpiCardDark, styles.kpiBlue, isLightTheme && styles.kpiBlueLight]}>
             <View style={styles.kpiTopRow}>
@@ -1747,15 +1897,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   appBarBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    gap: 3,
   },
   appBarBackBtnLight: {
     borderColor: '#cbd5e1',
     backgroundColor: '#ffffff',
+  },
+  appBarBackIcon: {
+    color: '#e2e8f0',
+  },
+  appBarBackIconLight: {
+    color: '#334155',
   },
   appBarBackText: {
     color: '#e2e8f0',
@@ -2202,6 +2361,125 @@ const styles = StyleSheet.create({
   },
   statusTextLight: {
     color: '#334155',
+  },
+  themeSwitchCard: {
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  themeSwitchCardLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#ffffff',
+  },
+  themeSwitchTextWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  themeSwitchTitle: {
+    color: '#f8fafc',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  themeSwitchTitleLight: {
+    color: '#0f172a',
+  },
+  themeSwitchSubtitle: {
+    color: '#94a3b8',
+    marginTop: 2,
+    fontSize: 11,
+  },
+  themeSwitchSubtitleLight: {
+    color: '#64748b',
+  },
+  themeSwitchControlWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  themeSwitchMode: {
+    color: '#e2e8f0',
+    fontWeight: '700',
+    fontSize: 12,
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  themeSwitchModeLight: {
+    color: '#334155',
+  },
+  quickSaleBtn: {
+    marginBottom: 12,
+    backgroundColor: '#0b5fa8',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#38bdf8',
+    shadowColor: '#020617',
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  quickSaleBtnLight: {
+    backgroundColor: '#2563eb',
+    borderColor: '#93c5fd',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.18,
+  },
+  quickSaleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  quickSaleIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(2, 6, 23, 0.28)',
+  },
+  quickSaleIconWrapLight: {
+    backgroundColor: 'rgba(239, 246, 255, 0.32)',
+  },
+  quickSaleIcon: {
+    color: '#dbeafe',
+  },
+  quickSaleIconLight: {
+    color: '#eff6ff',
+  },
+  quickSaleTextWrap: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  quickSaleBtnText: {
+    color: '#f8fafc',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  quickSaleBtnTextLight: {
+    color: '#ffffff',
+  },
+  quickSaleHint: {
+    color: '#bae6fd',
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  quickSaleHintLight: {
+    color: '#dbeafe',
+  },
+  quickSaleChevron: {
+    color: '#e0f2fe',
+  },
+  quickSaleChevronLight: {
+    color: '#ffffff',
   },
   kpiCardDark: {
     borderRadius: 14,

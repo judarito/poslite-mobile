@@ -15,17 +15,35 @@ function normalizeSettings(data) {
   };
 }
 
-export async function setCachedTenantTheme(tenantId, theme) {
-  if (!tenantId) return { success: false, error: 'tenantId es requerido' };
-  const cacheKey = `tenant-settings:${tenantId}`;
-  const cached = await getSimpleCache(cacheKey);
-  const normalized = normalizeSettings(cached?.value || {});
-  const next = {
-    ...normalized,
-    theme: theme || 'dark',
+function normalizeThemePreference(theme) {
+  const raw = String(theme || '').trim().toLowerCase();
+  if (raw === 'auto') return 'auto';
+  if (raw === 'light') return 'light';
+  return 'dark';
+}
+
+function userThemeCacheKey(tenantId, userId) {
+  return `tenant-theme:${tenantId}:${userId || 'anonymous'}`;
+}
+
+export async function getCachedUserThemePreference(tenantId, userId) {
+  if (!tenantId || !userId) return { success: false, data: null };
+  const cached = await getSimpleCache(userThemeCacheKey(tenantId, userId));
+  const theme = cached?.value?.theme;
+  if (!theme) return { success: true, data: null };
+  return {
+    success: true,
+    data: { theme: normalizeThemePreference(theme) },
   };
-  await saveSimpleCache(cacheKey, next);
-  return { success: true, data: next };
+}
+
+export async function setCachedUserThemePreference(tenantId, userId, theme) {
+  if (!tenantId || !userId) return { success: false, error: 'tenantId y userId son requeridos' };
+  const normalizedTheme = normalizeThemePreference(theme);
+  await saveSimpleCache(userThemeCacheKey(tenantId, userId), {
+    theme: normalizedTheme,
+  });
+  return { success: true, data: { theme: normalizedTheme } };
 }
 
 export async function getTenantSettings(tenantId, { offlineMode = false } = {}) {
