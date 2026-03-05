@@ -129,6 +129,18 @@ export async function registerPushTokenForCurrentUser({ tenantId, userId }) {
         .eq('is_active', true);
     }
 
+    // Si estamos en build nativa/dev-client, deja un unico token activo por usuario/plataforma.
+    if (appOwnership && appOwnership !== 'expo') {
+      await supabase
+        .from('user_push_devices')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('platform', Platform.OS || 'unknown')
+        .neq('expo_push_token', expoPushToken)
+        .eq('is_active', true);
+    }
+
     return {
       success: true,
       data: {

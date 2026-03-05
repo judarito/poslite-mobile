@@ -51,8 +51,52 @@ function normalizeSku(value) {
     .replace(/[^a-z0-9]/g, '');
 }
 
+const SIZE_TOKENS = new Set([
+  'xs',
+  's',
+  'm',
+  'l',
+  'xl',
+  'xxl',
+  'xxxl',
+  '2xl',
+  '3xl',
+  '4xl',
+]);
+
+function normalizeSizeToken(token) {
+  const clean = String(token || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  if (!clean) return null;
+  if (SIZE_TOKENS.has(clean)) return clean;
+  return null;
+}
+
 function tokenize(value) {
-  return normalizeText(value).split(' ').filter((t) => t.length >= 2);
+  return normalizeText(value)
+    .split(' ')
+    .filter((t) => t.length >= 2 || SIZE_TOKENS.has(t));
+}
+
+function extractSizeTokens(value) {
+  const tokens = normalizeText(value).split(' ').filter(Boolean);
+  const sizes = new Set();
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const current = tokens[i];
+    const next = tokens[i + 1];
+
+    const direct = normalizeSizeToken(current);
+    if (direct) sizes.add(direct);
+
+    if (current === 'talla' && next) {
+      const hinted = normalizeSizeToken(next);
+      if (hinted) sizes.add(hinted);
+    }
+  }
+
+  return sizes;
 }
 
 function parseAiJson(text) {
@@ -93,8 +137,9 @@ function scoreByTokens(lineText, candidate) {
 
 function findBestVariantMatch(line, catalog) {
   const lineSku = normalizeSku(line?.sku);
-  const rawName = String(line?.raw_name || line?.name || '').trim();
+  const rawName = String(`${line?.raw_name || line?.name || ''} ${line?.unit_hint || ''}`).trim();
   const normalizedName = normalizeText(rawName);
+  const lineSizes = extractSizeTokens(rawName);
 
   if (lineSku) {
     const bySku = catalog.find((item) => normalizeSku(item?.sku) === lineSku);
@@ -113,9 +158,37 @@ function findBestVariantMatch(line, catalog) {
     }
   }
 
+  let candidates = Array.isArray(catalog) ? [...catalog] : [];
+  if (lineSizes.size > 0) {
+    const withOverlappingSize = candidates.filter((candidate) => {
+      const candidateText = `${candidate?.product?.name || ''} ${candidate?.variant_name || ''} ${candidate?.sku || ''}`;
+      const candidateSizes = extractSizeTokens(candidateText);
+      if (candidateSizes.size === 0) return false;
+      return Array.from(lineSizes).some((size) => candidateSizes.has(size));
+    });
+
+    // Si el texto trae talla y hay variantes con esa talla, evita cruzar con otras tallas.
+    if (withOverlappingSize.length > 0) {
+      candidates = withOverlappingSize;
+    }
+  }
+
   let best = null;
-  for (const candidate of catalog) {
-    const score = scoreByTokens(rawName, candidate);
+  for (const candidate of candidates) {
+    let score = scoreByTokens(rawName, candidate);
+    const candidateText = `${candidate?.product?.name || ''} ${candidate?.variant_name || ''} ${candidate?.sku || ''}`;
+    const candidateSizes = extractSizeTokens(candidateText);
+
+    if (lineSizes.size > 0 && candidateSizes.size > 0) {
+      const hasSizeOverlap = Array.from(lineSizes).some((size) => candidateSizes.has(size));
+      if (hasSizeOverlap) score += 0.35;
+      else score -= 0.35;
+    }
+
+    if (lineSizes.size > 0 && candidateSizes.size === 0) {
+      score -= 0.15;
+    }
+
     if (!best || score > best.score) {
       best = { candidate, score };
     }
@@ -124,7 +197,7 @@ function findBestVariantMatch(line, catalog) {
   if (best && best.score >= 0.42) {
     return {
       variant: best.candidate,
-      confidence: Number(best.score.toFixed(3)),
+      confidence: Number(Math.min(1, Math.max(0, best.score)).toFixed(3)),
       matchReason: 'name_tokens',
     };
   }
@@ -172,6 +245,7 @@ Reglas:
 - Si no puedes inferir un campo, usa null.
 - No agregues texto fuera del JSON.
 - No inventes lineas o precios no presentes.
+- Conserva atributos de variante en raw_name (ej: talla, color, presentacion, capacidad).
 
 Texto OCR:
 """${clippedText}"""`;
@@ -262,7 +336,8 @@ Reglas:
 - quantity > 0 (si no existe, usa 1).
 - Si no puedes inferir un campo, usa null.
 - No agregues texto fuera del JSON.
-- No inventes lineas o precios no presentes.`;
+- No inventes lineas o precios no presentes.
+- Conserva atributos de variante en raw_name (ej: talla, color, presentacion, capacidad).`;
 
   const { data, error } = await supabase.functions.invoke(OCR_EDGE_FUNCTION, {
     body: {

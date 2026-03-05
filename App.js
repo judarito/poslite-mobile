@@ -1227,6 +1227,11 @@ export default function App() {
                 );
               })}
             </ScrollView>
+            <View style={[styles.menuFooter, isLightTheme ? null : styles.menuFooterDark]}>
+              <Pressable onPress={handleLogout} style={[styles.menuLogoutBtn, isLightTheme ? null : styles.menuLogoutBtnDark]}>
+                <Text style={styles.menuLogoutText}>Cerrar sesion</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2083,6 +2088,30 @@ const styles = StyleSheet.create({
   },
   menuChildTextDisabled: {
     color: '#64748b',
+  },
+  menuFooter: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  menuFooterDark: {
+    borderTopColor: '#1f2937',
+  },
+  menuLogoutBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    backgroundColor: '#dc2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuLogoutBtnDark: {
+    backgroundColor: '#b91c1c',
+  },
+  menuLogoutText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   centered: {
     flex: 1,

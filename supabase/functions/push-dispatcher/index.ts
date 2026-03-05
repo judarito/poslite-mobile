@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
   const { data: rows, error: fetchError } = await supabase
     .from('notification_push_queue')
     .select(
-      'push_queue_id, push_device_id, expo_push_token, title, message, payload, attempts, status, next_attempt_at, device:user_push_devices(is_active)',
+      'push_queue_id, push_device_id, expo_push_token, title, message, payload, attempts, status, next_attempt_at, device:user_push_devices(is_active, app_version)',
     )
     .in('status', ['PENDING', 'RETRY'])
     .lte('next_attempt_at', new Date().toISOString())
@@ -108,7 +108,10 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const isDeviceInactive = row?.device && (row.device as { is_active?: boolean }).is_active === false;
+    const device = (row?.device || {}) as { is_active?: boolean; app_version?: string };
+    const appVersion = String(device?.app_version || '').toLowerCase();
+    const isDeviceInactive = device.is_active === false;
+    const isExpoGoDevice = appVersion.includes('(expo)');
     if (isDeviceInactive) {
       await supabase
         .from('notification_push_queue')
@@ -116,6 +119,24 @@ Deno.serve(async (req) => {
           status: 'FAILED',
           attempts: attempts + 1,
           last_error: 'Push device inactive',
+        })
+        .eq('push_queue_id', row.push_queue_id);
+      failed += 1;
+      continue;
+    }
+    if (isExpoGoDevice) {
+      if (row.push_device_id) {
+        await supabase
+          .from('user_push_devices')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('push_device_id', row.push_device_id);
+      }
+      await supabase
+        .from('notification_push_queue')
+        .update({
+          status: 'FAILED',
+          attempts: attempts + 1,
+          last_error: 'Expo Go token disabled. Re-register from native build.',
         })
         .eq('push_queue_id', row.push_queue_id);
       failed += 1;

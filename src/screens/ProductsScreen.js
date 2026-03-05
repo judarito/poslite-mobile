@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import PaginatedList from '../components/PaginatedList';
 import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
@@ -44,6 +45,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [categoryOptions, setCategoryOptions] = useState([]);
   const [unitOptions, setUnitOptions] = useState([]);
+  const [expandedVariants, setExpandedVariants] = useState({});
   const categorySelectOptions = useMemo(
     () =>
       (categoryOptions || []).map((cat) => ({
@@ -223,7 +225,10 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
           onSubmitEditing={() => updateFilters({ search })}
         />
         <Pressable style={styles.searchBtn} onPress={() => updateFilters({ search })}>
-          <Text style={styles.searchBtnText}>Buscar</Text>
+          <View style={styles.btnContentRow}>
+            <Ionicons name="search-outline" size={16} color="#dbeafe" />
+            <Text style={styles.searchBtnText}>Buscar</Text>
+          </View>
         </Pressable>
       </View>
 
@@ -261,12 +266,57 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 </View>
               ) : null}
             </View>
+            {(item.product_variants || []).length > 0 ? (
+              <Pressable
+                style={[styles.variantToggleBtn, isLightTheme && styles.variantToggleBtnLight]}
+                onPress={() =>
+                  setExpandedVariants((prev) => ({
+                    ...prev,
+                    [item.product_id]: !prev[item.product_id],
+                  }))
+                }
+              >
+                <View style={styles.btnContentRow}>
+                  <Ionicons
+                    name={expandedVariants[item.product_id] ? 'eye-off-outline' : 'eye-outline'}
+                    size={14}
+                    color={isLightTheme ? '#0369a1' : '#bae6fd'}
+                  />
+                  <Text style={[styles.variantToggleText, isLightTheme && styles.variantToggleTextLight]}>
+                    {expandedVariants[item.product_id] ? 'Ocultar variantes' : 'Ver variantes'}
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
+            {expandedVariants[item.product_id] ? (
+              <View style={[styles.variantsBox, isLightTheme && styles.variantsBoxLight]}>
+                {(item.product_variants || []).map((variant) => (
+                  <View key={variant.variant_id} style={[styles.variantRow, isLightTheme && styles.variantRowLight]}>
+                    <Text style={[styles.variantName, isLightTheme && styles.variantNameLight]}>
+                      {variant.variant_name || 'Variante sin nombre'}
+                    </Text>
+                    <Text style={[styles.variantMeta, isLightTheme && styles.variantMetaLight]}>
+                      SKU: {variant.sku || '-'} · Precio: {Number(variant.price || 0).toLocaleString('es-CO')} · Costo: {Number(variant.cost || 0).toLocaleString('es-CO')}
+                    </Text>
+                    <Text style={[styles.variantMeta, isLightTheme && styles.variantMetaLight]}>
+                      Min stock: {variant.min_stock ?? '-'} · {variant.is_active ? 'Activa' : 'Inactiva'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
             <View style={styles.actions}>
               <Pressable style={styles.secondaryBtn} onPress={() => openEdit(item)}>
-                <Text style={styles.secondaryBtnText}>Editar</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="create-outline" size={15} color="#dbeafe" />
+                  <Text style={styles.secondaryBtnText}>Editar</Text>
+                </View>
               </Pressable>
               <Pressable style={styles.dangerBtn} onPress={() => remove(item)}>
-                <Text style={styles.dangerBtnText}>Eliminar</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="trash-outline" size={15} color="#fee2e2" />
+                  <Text style={styles.dangerBtnText}>Eliminar</Text>
+                </View>
               </Pressable>
             </View>
           </View>
@@ -274,7 +324,10 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
       />
 
       <Pressable style={styles.fab} onPress={openCreate}>
-        <Text style={styles.fabText}>+ Nuevo</Text>
+        <View style={styles.btnContentRow}>
+          <Ionicons name="add-circle-outline" size={16} color="#451a03" />
+          <Text style={styles.fabText}>Nuevo</Text>
+        </View>
       </Pressable>
 
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
@@ -378,12 +431,18 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
               </View>
 
               <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
-                <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name={saving ? 'hourglass-outline' : 'save-outline'} size={16} color="#fffbeb" />
+                  <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                </View>
               </Pressable>
             </ScrollView>
 
             <Pressable onPress={() => setModalOpen(false)} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>Cerrar</Text>
+              <View style={styles.btnContentRow}>
+                <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </View>
             </Pressable>
           </View>
         </View>
@@ -434,6 +493,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   searchBtnText: { color: '#dbeafe', fontWeight: '700' },
+  btnContentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -460,6 +520,41 @@ const styles = StyleSheet.create({
   badgeBlue: { borderColor: '#3b82f6' },
   badgeSky: { borderColor: '#0ea5e9' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
+  variantToggleBtn: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f172a',
+  },
+  variantToggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' },
+  variantToggleText: { color: '#bae6fd', fontSize: 12, fontWeight: '700' },
+  variantToggleTextLight: { color: '#0369a1' },
+  variantsBox: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#0f172a',
+    padding: 8,
+    gap: 6,
+  },
+  variantsBoxLight: { borderColor: '#dbe4ef', backgroundColor: '#f8fafc' },
+  variantRow: {
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 8,
+    padding: 8,
+    backgroundColor: '#111827',
+  },
+  variantRowLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
+  variantName: { color: '#f8fafc', fontWeight: '700', fontSize: 13, marginBottom: 2 },
+  variantNameLight: { color: '#0f172a' },
+  variantMeta: { color: '#94a3b8', fontSize: 12, marginTop: 1 },
+  variantMetaLight: { color: '#475569' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,

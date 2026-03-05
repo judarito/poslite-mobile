@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
@@ -19,6 +20,7 @@ import {
   getLayawayContracts,
   getLayawayDetail,
 } from '../services/layaway.service';
+import { getPaymentMethodsForDropdown } from '../services/pos.service';
 
 const STATUS_FILTERS = ['', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
 
@@ -36,6 +38,7 @@ export default function LayawayScreen({
   const [payAmount, setPayAmount] = useState('');
   const [payMethodCode, setPayMethodCode] = useState('CASH');
   const [payRef, setPayRef] = useState('');
+  const [paymentMethods, setPaymentMethods] = useState([]);
   const [busyAction, setBusyAction] = useState(false);
 
   const {
@@ -71,6 +74,28 @@ export default function LayawayScreen({
     setDetail(result.data);
     setLoadingDetail(false);
   };
+
+  useEffect(() => {
+    let active = true;
+    const loadPaymentMethods = async () => {
+      if (!tenant?.tenant_id) return;
+      const result = await getPaymentMethodsForDropdown(tenant.tenant_id, { offlineMode });
+      if (!active) return;
+      if (result.success) {
+        const list = Array.isArray(result.data) ? result.data : [];
+        setPaymentMethods(list);
+        const currentExists = list.some((m) => m.code === payMethodCode);
+        if (!currentExists) {
+          setPayMethodCode(list[0]?.code || 'CASH');
+        }
+      }
+    };
+
+    loadPaymentMethods();
+    return () => {
+      active = false;
+    };
+  }, [tenant?.tenant_id, offlineMode]);
 
   const refreshDetail = async () => {
     if (!detail?.layaway_id) return;
@@ -231,13 +256,19 @@ export default function LayawayScreen({
                       placeholderTextColor="#64748b"
                       keyboardType="numeric"
                     />
-                    <TextInput
-                      style={[styles.input, isLightTheme && styles.inputLight]}
-                      value={payMethodCode}
-                      onChangeText={setPayMethodCode}
-                      placeholder="Metodo (CASH, CARD, TRANSFER...)"
-                      placeholderTextColor="#64748b"
-                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodScroller}>
+                      <View style={styles.methodRow}>
+                        {(paymentMethods || []).map((m) => (
+                          <Pressable
+                            key={m.code}
+                            style={[styles.methodBtn, payMethodCode === m.code && styles.methodBtnActive]}
+                            onPress={() => setPayMethodCode(m.code)}
+                          >
+                            <Text style={[styles.methodBtnText, isLightTheme && styles.methodBtnTextLight]}>{m.name}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </ScrollView>
                     <TextInput
                       style={[styles.input, isLightTheme && styles.inputLight]}
                       value={payRef}
@@ -246,15 +277,24 @@ export default function LayawayScreen({
                       placeholderTextColor="#64748b"
                     />
                     <Pressable style={styles.primaryBtn} onPress={handleAddPayment} disabled={busyAction}>
-                      <Text style={styles.primaryBtnText}>{busyAction ? 'Procesando...' : 'Guardar abono'}</Text>
+                      <View style={styles.btnContentRow}>
+                        <Ionicons name={busyAction ? 'hourglass-outline' : 'wallet-outline'} size={16} color="#ecfdf5" />
+                        <Text style={styles.primaryBtnText}>{busyAction ? 'Procesando...' : 'Guardar abono'}</Text>
+                      </View>
                     </Pressable>
 
                     <View style={styles.inlineActions}>
                       <Pressable style={styles.secondaryBtn} onPress={handleComplete} disabled={busyAction}>
-                        <Text style={styles.secondaryBtnText}>Completar</Text>
+                        <View style={styles.btnContentRow}>
+                          <Ionicons name="checkmark-circle-outline" size={16} color="#dbeafe" />
+                          <Text style={styles.secondaryBtnText}>Completar</Text>
+                        </View>
                       </Pressable>
                       <Pressable style={styles.dangerBtn} onPress={handleCancel} disabled={busyAction}>
-                        <Text style={styles.dangerBtnText}>Cancelar</Text>
+                        <View style={styles.btnContentRow}>
+                          <Ionicons name="close-circle-outline" size={16} color="#fee2e2" />
+                          <Text style={styles.dangerBtnText}>Cancelar</Text>
+                        </View>
                       </Pressable>
                     </View>
                   </View>
@@ -263,7 +303,10 @@ export default function LayawayScreen({
             )}
 
             <Pressable onPress={() => setDetail(null)} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>Cerrar</Text>
+              <View style={styles.btnContentRow}>
+                <Ionicons name="chevron-down-circle-outline" size={16} color="#fff" />
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </View>
             </Pressable>
           </View>
         </View>
@@ -327,6 +370,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
+  btnContentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  methodScroller: { marginTop: 8, marginBottom: 2 },
+  methodRow: { flexDirection: 'row', gap: 6 },
+  methodBtn: {
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: '#0f172a',
+  },
+  methodBtnActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  methodBtnText: { color: '#f8fafc', fontSize: 12 },
+  methodBtnTextLight: { color: '#334155' },
   primaryBtn: { marginTop: 10, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   primaryBtnText: { color: '#ecfdf5', fontWeight: '700' },
   inlineActions: { flexDirection: 'row', gap: 8, marginTop: 8 },

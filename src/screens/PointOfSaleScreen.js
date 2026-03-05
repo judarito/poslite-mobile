@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useThemeMode } from '../lib/themeMode';
 import {
   createSale,
@@ -24,6 +25,7 @@ import {
   warmCustomersCatalog,
 } from '../services/pos.service';
 import { analyzeInvoiceWithImage, matchInvoiceLinesToCatalog } from '../services/invoiceAgent.service';
+import { analyzeChatOrderText } from '../services/chatOrderAgent.service';
 import { enqueuePendingOp, getPendingOpsCount } from '../storage/sqlite/database';
 import { getOrCreateDeviceId } from '../services/device.service';
 
@@ -202,6 +204,10 @@ export default function PointOfSaleScreen({
   const [error, setError] = useState('');
   const [processingInvoice, setProcessingInvoice] = useState(false);
   const [invoiceScanSummary, setInvoiceScanSummary] = useState(null);
+  const [chatOrderText, setChatOrderText] = useState('');
+  const [processingChatOrder, setProcessingChatOrder] = useState(false);
+  const [chatOrderSummary, setChatOrderSummary] = useState(null);
+  const [showAiTools, setShowAiTools] = useState(false);
 
   const currency = tenant?.currency_code || 'COP';
   const roundingMethod = tenantSettings?.rounding_method || 'normal';
@@ -577,6 +583,118 @@ export default function PointOfSaleScreen({
     }
   };
 
+  const parseChatOrderWithAgent = async () => {
+    setError('');
+    setMessage('');
+    setChatOrderSummary(null);
+
+    if (offlineMode) {
+      setError('Conversion de chat requiere conexion online.');
+      return;
+    }
+    if (!tenant?.tenant_id) {
+      setError('Tenant invalido para conversion de chat.');
+      return;
+    }
+    if (!chatOrderText.trim()) {
+      setError('Pega o escribe el pedido del chat.');
+      return;
+    }
+
+    setProcessingChatOrder(true);
+    try {
+      const locationId = currentSession?.cash_register?.location_id || null;
+      const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
+      if (!catalogResult.success || !catalogResult.data?.length) {
+        setError(catalogResult.error || 'No hay catalogo disponible para matching.');
+        return;
+      }
+
+      const aiResult = await analyzeChatOrderText({
+        tenantId: tenant.tenant_id,
+        chatText: chatOrderText,
+      });
+      if (!aiResult.success) {
+        setError(aiResult.error || 'No fue posible convertir el chat.');
+        return;
+      }
+
+      const { matched, unmatched } = matchInvoiceLinesToCatalog(
+        aiResult.data.line_items,
+        catalogResult.data,
+      );
+
+      const customerName = String(aiResult?.data?.order?.customer_name || '').trim();
+      let customerSuggestion = null;
+      let customerAutoloaded = false;
+      if (customerName.length >= 2) {
+        const customerLookup = offlineMode
+          ? await searchCustomersOffline(tenant.tenant_id, customerName, 20)
+          : await searchCustomers(tenant.tenant_id, customerName, 20);
+        const customerList = customerLookup.success ? customerLookup.data || [] : [];
+        const bestCustomer = findBestCustomerMatch(customerName, customerList);
+        if (bestCustomer?.customer) {
+          customerSuggestion = bestCustomer.customer;
+          if (!selectedCustomer?.customer_id) {
+            setSelectedCustomer(bestCustomer.customer);
+            setSearchCustomer(bestCustomer.customer.full_name || '');
+            setCustomers([]);
+            customerAutoloaded = true;
+          }
+        } else if (!selectedCustomer?.customer_id && customerList.length) {
+          setSearchCustomer(customerName);
+          setCustomers(customerList.slice(0, 6));
+        }
+      }
+
+      if (!matched.length) {
+        setError('La IA entendio el chat pero no encontro coincidencias en tu catalogo.');
+        setChatOrderSummary({
+          matchedCount: 0,
+          unmatched,
+          confidence: Number(aiResult?.data?.order?.confidence || 0),
+          customerSuggestion,
+          customerAutoloaded,
+          notes: aiResult?.data?.order?.notes || null,
+        });
+        return;
+      }
+
+      for (const item of matched) {
+        await upsertVariantInCart({
+          variant: item.variant,
+          quantity: item.line.quantity || 1,
+          unitPrice: null,
+        });
+      }
+
+      const aiNotes = String(aiResult?.data?.order?.notes || '').trim();
+      if (aiNotes) {
+        setSaleNote((prev) => {
+          const text = String(prev || '').trim();
+          if (!text) return aiNotes;
+          if (text.includes(aiNotes)) return text;
+          return `${text}\n${aiNotes}`;
+        });
+      }
+
+      setChatOrderSummary({
+        matchedCount: matched.length,
+        unmatched,
+        confidence: Number(aiResult?.data?.order?.confidence || 0),
+        customerSuggestion,
+        customerAutoloaded,
+        notes: aiResult?.data?.order?.notes || null,
+      });
+      setMessage(
+        `Chat convertido: ${matched.length} item(s) cargados al carrito${unmatched.length ? `, ${unmatched.length} sin match` : ''}${aiResult?.data?.cache_hit ? ' (cache)' : ''}.`,
+      );
+    } finally {
+      setProcessingChatOrder(false);
+      setChatOrderText('');
+    }
+  };
+
   const updateLineQuantity = (index, raw) => {
     const qty = Math.max(1, Number(raw || 1));
     setCart((prev) => {
@@ -660,6 +778,8 @@ export default function PointOfSaleScreen({
     setResults([]);
     setMessage('');
     setError('');
+    setChatOrderText('');
+    setChatOrderSummary(null);
     setPayments([{ method: paymentMethods[0]?.code || '', amount: 0 }]);
   };
 
@@ -809,17 +929,63 @@ export default function PointOfSaleScreen({
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
-        <View style={styles.invoiceAgentRow}>
+        <View style={styles.aiHeaderRow}>
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Items</Text>
           <Pressable
-            onPress={scanInvoiceWithAgent}
-            disabled={processingInvoice}
-            style={[styles.invoiceAgentBtn, processingInvoice && styles.btnDisabled]}
+            onPress={() => setShowAiTools((prev) => !prev)}
+            style={[styles.aiToggleBtn, isLightTheme && styles.aiToggleBtnLight]}
           >
-            <Text style={styles.invoiceAgentBtnText}>
-              {processingInvoice ? 'Analizando factura...' : 'Escanear factura (IA)'}
-            </Text>
+            <View style={styles.btnContentRow}>
+              <Ionicons
+                name={showAiTools ? 'sparkles' : 'sparkles-outline'}
+                size={14}
+                color={isLightTheme ? '#0369a1' : '#bae6fd'}
+              />
+              <Text style={[styles.aiToggleText, isLightTheme && styles.aiToggleTextLight]}>
+                {showAiTools ? 'IA Ocultar' : 'IA'}
+              </Text>
+            </View>
           </Pressable>
         </View>
+        {showAiTools ? (
+          <View style={styles.aiToolsWrap}>
+            <View style={styles.invoiceAgentRow}>
+              <Pressable
+                onPress={scanInvoiceWithAgent}
+                disabled={processingInvoice}
+                style={[styles.invoiceAgentBtn, processingInvoice && styles.btnDisabled]}
+              >
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="camera-outline" size={16} color="#eff6ff" />
+                  <Text style={styles.invoiceAgentBtnText}>
+                    {processingInvoice ? 'Analizando factura...' : 'Escanear factura (IA)'}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+            <TextInput
+              value={chatOrderText}
+              onChangeText={setChatOrderText}
+              placeholder="Pega pedido por chat. Ej: para Ana 2 cocas 350ml y 1 arroz diana 500"
+              placeholderTextColor="#64748b"
+              multiline
+              numberOfLines={3}
+              style={[styles.input, styles.chatOrderInput, isLightTheme && styles.inputLight]}
+            />
+            <Pressable
+              onPress={parseChatOrderWithAgent}
+              disabled={processingChatOrder}
+              style={[styles.chatOrderBtn, processingChatOrder && styles.btnDisabled]}
+            >
+              <View style={styles.btnContentRow}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#ecfeff" />
+                <Text style={styles.chatOrderBtnText}>
+                  {processingChatOrder ? 'Convirtiendo chat...' : 'Convertir chat a venta (IA)'}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        ) : null}
         <TextInput
           value={search}
           onChangeText={setSearch}
@@ -864,6 +1030,35 @@ export default function PointOfSaleScreen({
             {invoiceScanSummary?.unmatched?.length ? (
               <Text style={styles.invoiceSummaryWarn}>
                 Sin match: {invoiceScanSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {chatOrderSummary ? (
+          <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
+            <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
+              Conversion chat
+            </Text>
+            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+              Cargados: {chatOrderSummary.matchedCount || 0}
+            </Text>
+            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+              Confianza IA: {Math.round(Number(chatOrderSummary.confidence || 0) * 100)}%
+            </Text>
+            {chatOrderSummary?.customerSuggestion?.full_name ? (
+              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                Cliente sugerido: {chatOrderSummary.customerSuggestion.full_name}
+                {chatOrderSummary.customerAutoloaded ? ' (cargado)' : ''}
+              </Text>
+            ) : null}
+            {chatOrderSummary?.notes ? (
+              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                Nota IA: {chatOrderSummary.notes}
+              </Text>
+            ) : null}
+            {chatOrderSummary?.unmatched?.length ? (
+              <Text style={styles.invoiceSummaryWarn}>
+                Sin match: {chatOrderSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
               </Text>
             ) : null}
           </View>
@@ -999,7 +1194,10 @@ export default function PointOfSaleScreen({
           </View>
         ))}
         <Pressable onPress={addPayment} style={styles.addPaymentBtn}>
-          <Text style={[styles.addPaymentText, isLightTheme && styles.addPaymentTextLight]}>+ Agregar pago</Text>
+          <View style={styles.btnContentRow}>
+            <Ionicons name="add-circle-outline" size={16} color={isLightTheme ? '#334155' : '#e2e8f0'} />
+            <Text style={[styles.addPaymentText, isLightTheme && styles.addPaymentTextLight]}>Agregar pago</Text>
+          </View>
         </Pressable>
         {change > 0 ? <Text style={styles.okText}>Cambio: {formatMoney(change)}</Text> : null}
         {remaining > 0 ? <Text style={styles.warnText}>Falta: {formatMoney(remaining)}</Text> : null}
@@ -1023,17 +1221,23 @@ export default function PointOfSaleScreen({
         disabled={processing || cart.length === 0 || remaining > 0}
         style={[styles.chargeBtn, (processing || cart.length === 0 || remaining > 0) && styles.btnDisabled]}
       >
-        <Text style={styles.chargeText}>
-          {processing
-            ? 'Procesando...'
-            : offlineMode
-              ? `Guardar offline ${formatMoney(totals.total)}`
-              : `Cobrar ${formatMoney(totals.total)}`}
-        </Text>
+        <View style={styles.btnContentRow}>
+          <Ionicons name={offlineMode ? 'cloud-upload-outline' : 'card-outline'} size={18} color="#082f49" />
+          <Text style={styles.chargeText}>
+            {processing
+              ? 'Procesando...'
+              : offlineMode
+                ? `Guardar offline ${formatMoney(totals.total)}`
+                : `Cobrar ${formatMoney(totals.total)}`}
+          </Text>
+        </View>
       </Pressable>
 
       <Pressable onPress={clearSale} disabled={cart.length === 0} style={[styles.clearBtn, cart.length === 0 && styles.btnDisabled]}>
-        <Text style={styles.clearText}>Limpiar</Text>
+        <View style={styles.btnContentRow}>
+          <Ionicons name="trash-outline" size={16} color="#fca5a5" />
+          <Text style={styles.clearText}>Limpiar</Text>
+        </View>
       </Pressable>
     </ScrollView>
   );
@@ -1098,6 +1302,46 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderColor: '#dbe4ef',
   },
+  btnContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  aiHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  aiToggleBtn: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#0f172a',
+  },
+  aiToggleBtnLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f8fafc',
+  },
+  aiToggleText: {
+    color: '#bae6fd',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  aiToggleTextLight: {
+    color: '#0369a1',
+  },
+  aiToolsWrap: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: 8,
+    backgroundColor: '#0f172a',
+  },
   invoiceAgentRow: {
     marginBottom: 8,
   },
@@ -1109,6 +1353,22 @@ const styles = StyleSheet.create({
   },
   invoiceAgentBtnText: {
     color: '#eff6ff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  chatOrderInput: {
+    minHeight: 74,
+    textAlignVertical: 'top',
+  },
+  chatOrderBtn: {
+    backgroundColor: '#0f766e',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  chatOrderBtnText: {
+    color: '#ecfeff',
     fontWeight: '700',
     fontSize: 13,
   },
