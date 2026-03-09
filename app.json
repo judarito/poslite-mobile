@@ -3,6 +3,7 @@
     "name": "POSLite",
     "slug": "poslite-mobile",
     "version": "1.0.0",
+    "newArchEnabled": true,
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,14 +14,20 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.juan.d.ricardo.t.app"
+      "bundleIdentifier": "com.juan.d.ricardo.t.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "POSLite necesita acceso al microfono para procesar comandos de voz."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
-      "package": "com.juan.d.ricardo.t.app"
+      "package": "com.juan.d.ricardo.t.app",
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

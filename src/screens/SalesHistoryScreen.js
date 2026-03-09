@@ -28,6 +28,7 @@ import {
   getSaleById,
   getSales,
   retryPendingOfflineSale,
+  retrySaleElectronicInvoicing,
   updatePendingOfflineSalePayload,
   validatePendingOfflineSaleStock,
   voidSale,
@@ -99,6 +100,9 @@ function buildSaleTicketText(sale, currencyFormatter) {
     `POSLite · Venta ${sale?.sale_number || '-'}`,
     `Fecha: ${sale?.sold_at ? new Date(sale.sold_at).toLocaleString() : '-'}`,
     `Cliente: ${sale?.customer?.full_name || 'Consumidor final'}`,
+    `Documento: ${sale?.invoice_type || 'FV'}`,
+    sale?.dian_status ? `Estado DIAN: ${sale.dian_status}` : null,
+    sale?.cufe ? `CUFE: ${sale.cufe}` : null,
     '',
     'Productos:',
     ...(lines.length ? lines : ['- Sin lineas']),
@@ -107,7 +111,21 @@ function buildSaleTicketText(sale, currencyFormatter) {
     '',
     'Pagos:',
     ...(payments.length ? payments : ['- Sin pagos']),
-  ].join('\n');
+  ].filter(Boolean).join('\n');
+}
+
+function getDianStatusTone(status = '') {
+  const value = String(status || '').toUpperCase();
+  if (value === 'ACCEPTED') return 'accepted';
+  if (value === 'REJECTED' || value === 'ERROR') return 'error';
+  if (value === 'PROCESSING' || value === 'PENDING') return 'pending';
+  return 'neutral';
+}
+
+function shouldAllowFeRetry(sale) {
+  if (!sale || sale?.is_local_pending) return false;
+  const status = String(sale?.dian_status || '').toUpperCase();
+  return status === 'PENDING' || status === 'REJECTED' || status === 'ERROR';
 }
 
 export default function SalesHistoryScreen({
@@ -509,6 +527,39 @@ export default function SalesHistoryScreen({
     setProcessing(false);
   };
 
+  const retryFe = async (sale) => {
+    if (!sale?.sale_id || !tenant?.tenant_id) return;
+    if (offlineMode) {
+      setError('No puedes reintentar FE en modo offline.');
+      return;
+    }
+
+    setProcessing(true);
+    const result = await retrySaleElectronicInvoicing(tenant.tenant_id, sale.sale_id);
+    if (!result.success) {
+      setError(result.error || 'No fue posible reintentar facturacion electronica');
+      setProcessing(false);
+      return;
+    }
+
+    if (result.mode === 'manual_reset') {
+      Alert.alert(
+        'FE en cola',
+        'La venta quedo en estado PENDING para reproceso. El envio depende del backend FE.',
+      );
+    }
+
+    if (detail?.sale_id === sale.sale_id) {
+      const refreshed = await getSaleById(tenant.tenant_id, sale.sale_id);
+      if (refreshed.success) {
+        setDetail(refreshed.data);
+      }
+    }
+
+    await loadPage(page, filters);
+    setProcessing(false);
+  };
+
   const refreshPendingCount = async () => {
     if (!onPendingOpsChange) return;
     const next = await getPendingOpsCount();
@@ -889,6 +940,28 @@ export default function SalesHistoryScreen({
             <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>{new Date(sale.sold_at).toLocaleString()}</Text>
             <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Sede: {sale.location?.name || 'Sin sede'}</Text>
             <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>Cliente: {sale.customer?.full_name || 'Consumidor final'}</Text>
+            <View style={styles.feMetaRow}>
+              <Text style={[styles.feInvoiceType, isLightTheme && styles.feInvoiceTypeLight]}>
+                Documento: {sale.invoice_type || 'FV'}
+              </Text>
+              {sale.dian_status ? (
+                <View
+                  style={[
+                    styles.feChip,
+                    getDianStatusTone(sale.dian_status) === 'accepted' && styles.feChipAccepted,
+                    getDianStatusTone(sale.dian_status) === 'error' && styles.feChipError,
+                    getDianStatusTone(sale.dian_status) === 'pending' && styles.feChipPending,
+                  ]}
+                >
+                  <Text style={styles.feChipText}>{sale.dian_status}</Text>
+                </View>
+              ) : null}
+            </View>
+            {sale.cufe ? (
+              <Text style={[styles.metaLine, isLightTheme && styles.metaLineLight]}>
+                CUFE: {String(sale.cufe).slice(0, 18)}...
+              </Text>
+            ) : null}
             {sale.sync_error ? <Text style={styles.syncErrorLine}>Error sync: {sale.sync_error}</Text> : null}
             <Text style={styles.total}>{formatMoney(sale.total || 0)}</Text>
 
@@ -934,6 +1007,15 @@ export default function SalesHistoryScreen({
               ) : null}
               {sale.status === 'COMPLETED' ? (
                 <>
+                  {shouldAllowFeRetry(sale) ? (
+                    <Pressable
+                      style={[styles.actionBtn, styles.retryBtn, processing && styles.pageBtnDisabled]}
+                      onPress={() => retryFe(sale)}
+                      disabled={processing}
+                    >
+                      <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                    </Pressable>
+                  ) : null}
                   <Pressable style={[styles.actionBtn, styles.returnBtn]} onPress={() => openReturnDialog(sale)}>
                     <Text style={styles.actionBtnText}>Devolver</Text>
                   </Pressable>
@@ -963,6 +1045,26 @@ export default function SalesHistoryScreen({
                 <Text style={styles.metaLine}>{detail?.sale_number || '-'}</Text>
                 <Text style={styles.metaLine}>{detail?.customer?.full_name || 'Consumidor final'}</Text>
                 <Text style={styles.metaLine}>Total: {formatMoney(detail?.total || 0)}</Text>
+                <Text style={styles.metaLine}>Documento: {detail?.invoice_type || 'FV'}</Text>
+                {detail?.dian_status ? <Text style={styles.metaLine}>Estado DIAN: {detail.dian_status}</Text> : null}
+                {detail?.cufe ? <Text style={styles.metaLine}>CUFE: {detail.cufe}</Text> : null}
+                {detail?.dian_consecutive ? (
+                  <Text style={styles.metaLine}>Consecutivo DIAN: {detail.dian_consecutive}</Text>
+                ) : null}
+                {detail?.third_party?.legal_name ? (
+                  <Text style={styles.metaLine}>
+                    Receptor FE: {detail.third_party.legal_name} ({detail.third_party.document_number || 'N/D'})
+                  </Text>
+                ) : null}
+                {shouldAllowFeRetry(detail) ? (
+                  <Pressable
+                    style={[styles.actionBtn, styles.retryBtn, processing && styles.pageBtnDisabled, { marginTop: 8 }]}
+                    disabled={processing}
+                    onPress={() => retryFe(detail)}
+                  >
+                    <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                  </Pressable>
+                ) : null}
 
                 <Text style={styles.groupTitle}>Lineas</Text>
                 {(detail?.sale_lines || []).map((line) => (
@@ -1284,6 +1386,19 @@ const styles = StyleSheet.create({
   statusFailed: { color: '#f87171' },
   metaLine: { color: '#cbd5e1', fontSize: 13, marginBottom: 2 },
   metaLineLight: { color: '#475569' },
+  feMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 2 },
+  feInvoiceType: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  feInvoiceTypeLight: { color: '#334155' },
+  feChip: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#334155',
+  },
+  feChipPending: { backgroundColor: '#92400e' },
+  feChipAccepted: { backgroundColor: '#166534' },
+  feChipError: { backgroundColor: '#991b1b' },
+  feChipText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
   syncErrorLine: { color: '#fca5a5', fontSize: 12, marginBottom: 2 },
   total: { color: '#22d3ee', fontSize: 18, fontWeight: '700', marginTop: 4 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },

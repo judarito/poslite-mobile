@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useThemeMode } from '../lib/themeMode';
 import {
   createSale,
+  findVariantByCode,
   getCurrentUserOpenSession,
   getPaymentMethodsForDropdown,
   getTaxInfoForVariant,
@@ -25,11 +26,50 @@ import {
   warmCustomersCatalog,
 } from '../services/pos.service';
 import { analyzeInvoiceWithImage, matchInvoiceLinesToCatalog } from '../services/invoiceAgent.service';
-import { analyzeChatOrderText } from '../services/chatOrderAgent.service';
+import {
+  cancelVoskTranscription,
+  ensureEmbeddedModelReady,
+  getEmbeddedLlmStatus,
+  getEmbeddedModelStatus,
+  getCommandEngineMetrics,
+  isVoskSttAvailable,
+  resolveSaleCommandFromText,
+  transcribeWithVosk,
+} from '../services/commandEngine';
 import { enqueuePendingOp, getPendingOpsCount } from '../storage/sqlite/database';
 import { getOrCreateDeviceId } from '../services/device.service';
+import { getSimpleCache, saveSimpleCache } from '../services/offlineCache.service';
 
 const OCR_MAX_BYTES = 980 * 1024;
+const QUICK_CASH_AMOUNTS = [5000, 10000, 20000, 50000];
+
+function favoritesCacheKey(tenantId, userId) {
+  return `pos-favorites:${tenantId}:${userId}`;
+}
+
+function draftsCacheKey(tenantId, userId) {
+  return `pos-ticket-drafts:${tenantId}:${userId}`;
+}
+
+function normalizeLookupText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isCashMethodCode(code) {
+  const value = normalizeLookupText(code);
+  return (
+    value === 'cash' ||
+    value === 'efectivo' ||
+    value === 'cash_efectivo'
+  );
+}
+
+function isLikelyScannerInput(value) {
+  const text = String(value || '').trim();
+  if (text.length < 4) return false;
+  if (text.includes(' ')) return false;
+  return /^[a-z0-9._-]+$/i.test(text);
+}
 
 function estimateBase64Bytes(base64) {
   const raw = String(base64 || '');
@@ -190,13 +230,15 @@ export default function PointOfSaleScreen({
   const [search, setSearch] = useState('');
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [results, setResults] = useState([]);
+  const [favoriteVariants, setFavoriteVariants] = useState([]);
+  const [ticketDrafts, setTicketDrafts] = useState([]);
   const [cart, setCart] = useState([]);
   const [searchCustomer, setSearchCustomer] = useState('');
   const [searchingCustomers, setSearchingCustomers] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
-  const [payments, setPayments] = useState([{ method: '', amount: 0 }]);
+  const [payments, setPayments] = useState([{ method: '', amount: 0, reference: '' }]);
   const [currentSession, setCurrentSession] = useState(null);
   const [saleNote, setSaleNote] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -207,6 +249,12 @@ export default function PointOfSaleScreen({
   const [chatOrderText, setChatOrderText] = useState('');
   const [processingChatOrder, setProcessingChatOrder] = useState(false);
   const [chatOrderSummary, setChatOrderSummary] = useState(null);
+  const [processingVoiceOrder, setProcessingVoiceOrder] = useState(false);
+  const [voicePreviewText, setVoicePreviewText] = useState('');
+  const [commandEngineMetrics, setCommandEngineMetrics] = useState(null);
+  const [embeddedLlmStatus, setEmbeddedLlmStatus] = useState(null);
+  const [preparingEmbeddedLlm, setPreparingEmbeddedLlm] = useState(false);
+  const [embeddedDownloadProgress, setEmbeddedDownloadProgress] = useState(0);
   const [showAiTools, setShowAiTools] = useState(false);
 
   const currency = tenant?.currency_code || 'COP';
@@ -275,6 +323,13 @@ export default function PointOfSaleScreen({
     [userProfile],
   );
 
+  const effectiveThirdPartyId = selectedCustomer?.customer_id || null;
+  const voiceAvailable = useMemo(() => isVoskSttAvailable(), []);
+  const localLlmMode = useMemo(
+    () => String(process.env.EXPO_PUBLIC_LOCAL_LLM_MODE || 'auto').trim().toLowerCase(),
+    [],
+  );
+
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -294,7 +349,7 @@ export default function PointOfSaleScreen({
         if (pm.success) {
           setPaymentMethods(pm.data);
           if (pm.data.length > 0) {
-            setPayments([{ method: pm.data[0].code, amount: 0 }]);
+            setPayments([{ method: pm.data[0].code, amount: 0, reference: '' }]);
           }
         }
         if (session.success) {
@@ -377,6 +432,56 @@ export default function PointOfSaleScreen({
     };
   }, [searchCustomer, tenant?.tenant_id, offlineMode]);
 
+  useEffect(() => {
+    let active = true;
+    const loadLocalState = async () => {
+      const tenantId = tenant?.tenant_id;
+      const userId = userProfile?.user_id;
+      if (!tenantId || !userId) return;
+
+      const [favoritesCached, draftsCached] = await Promise.all([
+        getSimpleCache(favoritesCacheKey(tenantId, userId)),
+        getSimpleCache(draftsCacheKey(tenantId, userId)),
+      ]);
+
+      if (!active) return;
+      setFavoriteVariants(Array.isArray(favoritesCached?.value) ? favoritesCached.value : []);
+      setTicketDrafts(Array.isArray(draftsCached?.value) ? draftsCached.value : []);
+    };
+
+    loadLocalState();
+    return () => {
+      active = false;
+    };
+  }, [tenant?.tenant_id, userProfile?.user_id]);
+
+  useEffect(() => {
+    const tenantId = tenant?.tenant_id;
+    const userId = userProfile?.user_id;
+    if (!tenantId || !userId) return;
+    saveSimpleCache(favoritesCacheKey(tenantId, userId), favoriteVariants);
+  }, [favoriteVariants, tenant?.tenant_id, userProfile?.user_id]);
+
+  useEffect(() => {
+    const tenantId = tenant?.tenant_id;
+    const userId = userProfile?.user_id;
+    if (!tenantId || !userId) return;
+    saveSimpleCache(draftsCacheKey(tenantId, userId), ticketDrafts);
+  }, [ticketDrafts, tenant?.tenant_id, userProfile?.user_id]);
+
+  useEffect(() => {
+    if (!tenant?.tenant_id) return;
+    getCommandEngineMetrics(tenant.tenant_id).then((result) => {
+      if (result.success) {
+        setCommandEngineMetrics(result.data);
+      }
+    });
+  }, [tenant?.tenant_id]);
+
+  useEffect(() => {
+    refreshEmbeddedLlmStatus();
+  }, []);
+
   const upsertSinglePaymentIfNeeded = (nextTotal) => {
     const rounded = applyRounding(nextTotal);
     setPayments((prev) => {
@@ -443,6 +548,51 @@ export default function PointOfSaleScreen({
 
   const addToCart = async (variant) => {
     await upsertVariantInCart({ variant, quantity: 1 });
+    setSearch('');
+    setResults([]);
+  };
+
+  const isFavoriteVariant = (variantId) => {
+    return favoriteVariants.some((variant) => variant.variant_id === variantId);
+  };
+
+  const toggleFavoriteVariant = (variant) => {
+    if (!variant?.variant_id) return;
+    setFavoriteVariants((prev) => {
+      const exists = prev.some((item) => item.variant_id === variant.variant_id);
+      if (exists) {
+        return prev.filter((item) => item.variant_id !== variant.variant_id);
+      }
+      const payload = {
+        variant_id: variant.variant_id,
+        sku: variant.sku || '',
+        variant_name: variant.variant_name || '',
+        product: { name: variant.product?.name || '' },
+        cost: Number(variant.cost || 0),
+        price: Number(variant.price || 0),
+        price_includes_tax: Boolean(variant.price_includes_tax),
+      };
+      return [payload, ...prev].slice(0, 24);
+    });
+  };
+
+  const handleSearchInputSubmit = async () => {
+    const code = String(search || '').trim();
+    if (!isLikelyScannerInput(code)) return;
+    if (!tenant?.tenant_id) {
+      setError('Tenant invalido para busqueda por codigo.');
+      return;
+    }
+    setError('');
+    setMessage('');
+    const locationId = currentSession?.cash_register?.location_id || null;
+    const result = await findVariantByCode(tenant?.tenant_id, code, locationId, { offlineMode });
+    if (!result.success || !result.data) {
+      setError(result.error || `No se encontro producto para el codigo ${code}.`);
+      return;
+    }
+    await upsertVariantInCart({ variant: result.data, quantity: 1 });
+    setMessage(`Producto agregado por codigo: ${result.data.product?.name || result.data.sku || code}.`);
     setSearch('');
     setResults([]);
   };
@@ -583,17 +733,181 @@ export default function PointOfSaleScreen({
     }
   };
 
+  const refreshEngineMetrics = async () => {
+    if (!tenant?.tenant_id) return;
+    const metricsResult = await getCommandEngineMetrics(tenant.tenant_id);
+    if (metricsResult.success) {
+      setCommandEngineMetrics(metricsResult.data);
+    }
+  };
+
+  const refreshEmbeddedLlmStatus = async () => {
+    const [modelStatusResult, runtimeStatusResult] = await Promise.all([
+      getEmbeddedModelStatus(),
+      getEmbeddedLlmStatus(),
+    ]);
+
+    setEmbeddedLlmStatus({
+      model: modelStatusResult?.success ? modelStatusResult : null,
+      runtime: runtimeStatusResult?.success ? runtimeStatusResult?.data || null : null,
+    });
+  };
+
+  const handlePrepareEmbeddedLlm = async () => {
+    setError('');
+    setMessage('');
+    setPreparingEmbeddedLlm(true);
+    setEmbeddedDownloadProgress(0);
+    try {
+      const result = await ensureEmbeddedModelReady({
+        onProgress: ({ progress }) => {
+          setEmbeddedDownloadProgress(Number(progress || 0));
+        },
+      });
+
+      if (!result.success) {
+        setError(result.error || 'No fue posible preparar el modelo local.');
+        return;
+      }
+
+      const modelMb = Number(
+        result.mb || (Number.isFinite(Number(result.bytes)) ? (Number(result.bytes) / (1024 * 1024)).toFixed(2) : 0),
+      );
+      setMessage(
+        result.downloaded
+          ? `Modelo local listo (${modelMb} MB).`
+          : 'Modelo local ya estaba disponible.',
+      );
+    } finally {
+      setPreparingEmbeddedLlm(false);
+      await refreshEmbeddedLlmStatus();
+    }
+  };
+
+  const runCommandToCart = async ({ commandText, inputType = 'text' }) => {
+    const text = String(commandText || '').trim();
+    if (!tenant?.tenant_id) {
+      setError('Tenant invalido para conversion de comando.');
+      return false;
+    }
+    if (!text) {
+      setError('No hay texto de comando para procesar.');
+      return false;
+    }
+
+    const locationId = currentSession?.cash_register?.location_id || null;
+    const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
+    if (!catalogResult.success || !catalogResult.data?.length) {
+      setError(catalogResult.error || 'No hay catalogo disponible para matching.');
+      return false;
+    }
+
+    const aiResult = await resolveSaleCommandFromText({
+      tenantId: tenant.tenant_id,
+      inputText: text,
+      inputType,
+      offlineMode,
+      catalogFingerprint: locationId || 'no-location',
+    });
+    if (!aiResult.success) {
+      setError(aiResult.error || 'No fue posible convertir el comando.');
+      await refreshEngineMetrics();
+      return false;
+    }
+
+    const { matched, unmatched } = matchInvoiceLinesToCatalog(
+      aiResult.data.line_items,
+      catalogResult.data,
+    );
+
+    const customerName = String(aiResult?.data?.order?.customer_name || '').trim();
+    let customerSuggestion = null;
+    let customerAutoloaded = false;
+    if (customerName.length >= 2) {
+      const customerLookup = offlineMode
+        ? await searchCustomersOffline(tenant.tenant_id, customerName, 20)
+        : await searchCustomers(tenant.tenant_id, customerName, 20);
+      const customerList = customerLookup.success ? customerLookup.data || [] : [];
+      const bestCustomer = findBestCustomerMatch(customerName, customerList);
+      if (bestCustomer?.customer) {
+        customerSuggestion = bestCustomer.customer;
+        if (!selectedCustomer?.customer_id) {
+          setSelectedCustomer(bestCustomer.customer);
+          setSearchCustomer(bestCustomer.customer.full_name || '');
+          setCustomers([]);
+          customerAutoloaded = true;
+        }
+      } else if (!selectedCustomer?.customer_id && customerList.length) {
+        setSearchCustomer(customerName);
+        setCustomers(customerList.slice(0, 6));
+      }
+    }
+
+    if (!matched.length) {
+      setError('El motor interpreto el comando pero no encontro coincidencias en catalogo.');
+      setChatOrderSummary({
+        matchedCount: 0,
+        unmatched,
+        confidence: Number(aiResult?.data?.order?.confidence || 0),
+        customerSuggestion,
+        customerAutoloaded,
+        notes: aiResult?.data?.order?.notes || null,
+      });
+      await refreshEngineMetrics();
+      return false;
+    }
+
+    for (const item of matched) {
+      await upsertVariantInCart({
+        variant: item.variant,
+        quantity: item.line.quantity || 1,
+        unitPrice: null,
+      });
+    }
+
+    const aiNotes = String(aiResult?.data?.order?.notes || '').trim();
+    if (aiNotes) {
+      setSaleNote((prev) => {
+        const previous = String(prev || '').trim();
+        if (!previous) return aiNotes;
+        if (previous.includes(aiNotes)) return previous;
+        return `${previous}\n${aiNotes}`;
+      });
+    }
+
+    setChatOrderSummary({
+      matchedCount: matched.length,
+      unmatched,
+      confidence: Number(aiResult?.data?.order?.confidence || 0),
+      customerSuggestion,
+      customerAutoloaded,
+      notes: aiResult?.data?.order?.notes || null,
+    });
+
+    const source = aiResult?.data?.engine?.source || 'engine';
+    const sourceLabel = source === 'local_cache'
+      ? 'cache local'
+      : source === 'deterministic_parser'
+        ? 'parser local'
+        : source === 'local_llm'
+          ? 'llm local'
+          : source === 'cloud_llm'
+            ? 'llm cloud'
+            : source;
+    setMessage(
+      `Comando convertido (${inputType}): ${matched.length} item(s)${unmatched.length ? `, ${unmatched.length} sin match` : ''}${aiResult?.data?.cache_hit ? ' (cache)' : ''} · via ${sourceLabel}.`,
+    );
+    await refreshEngineMetrics();
+    return true;
+  };
+
   const parseChatOrderWithAgent = async () => {
     setError('');
     setMessage('');
     setChatOrderSummary(null);
 
-    if (offlineMode) {
-      setError('Conversion de chat requiere conexion online.');
-      return;
-    }
-    if (!tenant?.tenant_id) {
-      setError('Tenant invalido para conversion de chat.');
+    if (processingVoiceOrder) {
+      setError('Finaliza o cancela la captura de voz antes de convertir texto.');
       return;
     }
     if (!chatOrderText.trim()) {
@@ -603,95 +917,59 @@ export default function PointOfSaleScreen({
 
     setProcessingChatOrder(true);
     try {
-      const locationId = currentSession?.cash_register?.location_id || null;
-      const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
-      if (!catalogResult.success || !catalogResult.data?.length) {
-        setError(catalogResult.error || 'No hay catalogo disponible para matching.');
-        return;
-      }
-
-      const aiResult = await analyzeChatOrderText({
-        tenantId: tenant.tenant_id,
-        chatText: chatOrderText,
+      await runCommandToCart({
+        commandText: chatOrderText,
+        inputType: 'text',
       });
-      if (!aiResult.success) {
-        setError(aiResult.error || 'No fue posible convertir el chat.');
-        return;
-      }
-
-      const { matched, unmatched } = matchInvoiceLinesToCatalog(
-        aiResult.data.line_items,
-        catalogResult.data,
-      );
-
-      const customerName = String(aiResult?.data?.order?.customer_name || '').trim();
-      let customerSuggestion = null;
-      let customerAutoloaded = false;
-      if (customerName.length >= 2) {
-        const customerLookup = offlineMode
-          ? await searchCustomersOffline(tenant.tenant_id, customerName, 20)
-          : await searchCustomers(tenant.tenant_id, customerName, 20);
-        const customerList = customerLookup.success ? customerLookup.data || [] : [];
-        const bestCustomer = findBestCustomerMatch(customerName, customerList);
-        if (bestCustomer?.customer) {
-          customerSuggestion = bestCustomer.customer;
-          if (!selectedCustomer?.customer_id) {
-            setSelectedCustomer(bestCustomer.customer);
-            setSearchCustomer(bestCustomer.customer.full_name || '');
-            setCustomers([]);
-            customerAutoloaded = true;
-          }
-        } else if (!selectedCustomer?.customer_id && customerList.length) {
-          setSearchCustomer(customerName);
-          setCustomers(customerList.slice(0, 6));
-        }
-      }
-
-      if (!matched.length) {
-        setError('La IA entendio el chat pero no encontro coincidencias en tu catalogo.');
-        setChatOrderSummary({
-          matchedCount: 0,
-          unmatched,
-          confidence: Number(aiResult?.data?.order?.confidence || 0),
-          customerSuggestion,
-          customerAutoloaded,
-          notes: aiResult?.data?.order?.notes || null,
-        });
-        return;
-      }
-
-      for (const item of matched) {
-        await upsertVariantInCart({
-          variant: item.variant,
-          quantity: item.line.quantity || 1,
-          unitPrice: null,
-        });
-      }
-
-      const aiNotes = String(aiResult?.data?.order?.notes || '').trim();
-      if (aiNotes) {
-        setSaleNote((prev) => {
-          const text = String(prev || '').trim();
-          if (!text) return aiNotes;
-          if (text.includes(aiNotes)) return text;
-          return `${text}\n${aiNotes}`;
-        });
-      }
-
-      setChatOrderSummary({
-        matchedCount: matched.length,
-        unmatched,
-        confidence: Number(aiResult?.data?.order?.confidence || 0),
-        customerSuggestion,
-        customerAutoloaded,
-        notes: aiResult?.data?.order?.notes || null,
-      });
-      setMessage(
-        `Chat convertido: ${matched.length} item(s) cargados al carrito${unmatched.length ? `, ${unmatched.length} sin match` : ''}${aiResult?.data?.cache_hit ? ' (cache)' : ''}.`,
-      );
     } finally {
       setProcessingChatOrder(false);
       setChatOrderText('');
+    }
+  };
+
+  const parseVoiceOrderWithVosk = async () => {
+    setError('');
+    setMessage('');
+    setChatOrderSummary(null);
+
+    if (!voiceAvailable) {
+      setError('Vosk no esta disponible en este build. Requiere dev-client con modulo nativo.');
+      return;
+    }
+
+    if (processingVoiceOrder) {
+      await cancelVoskTranscription();
+      setProcessingVoiceOrder(false);
+      return;
+    }
+
+    setProcessingVoiceOrder(true);
+    setVoicePreviewText('');
+    try {
+      const voiceResult = await transcribeWithVosk({
+        timeoutMs: 7000,
+        onPartialText: (partial) => setVoicePreviewText(String(partial || '')),
+      });
+
+      if (!voiceResult.success) {
+        setError(voiceResult.error || 'No fue posible transcribir voz con Vosk.');
+        return;
+      }
+
+      const transcript = String(voiceResult?.data?.text || '').trim();
+      if (!transcript) {
+        setError('No se detecto comando de voz.');
+        return;
+      }
+
+      setVoicePreviewText(transcript);
+      setChatOrderText(transcript);
+      await runCommandToCart({
+        commandText: transcript,
+        inputType: 'voice',
+      });
+    } finally {
+      setProcessingVoiceOrder(false);
     }
   };
 
@@ -753,7 +1031,7 @@ export default function PointOfSaleScreen({
   const addPayment = () => {
     setPayments((prev) => [
       ...prev,
-      { method: paymentMethods[0]?.code || '', amount: remaining },
+      { method: paymentMethods[0]?.code || '', amount: remaining, reference: '' },
     ]);
   };
 
@@ -768,6 +1046,87 @@ export default function PointOfSaleScreen({
     setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
   };
 
+  const applyQuickCash = (amount) => {
+    const value = Math.max(0, Number(amount || 0));
+    if (value <= 0) return;
+    setPayments((prev) => {
+      if (!prev.length) return prev;
+      const cashIndex = prev.findIndex((payment) => isCashMethodCode(payment.method));
+      const index = cashIndex >= 0 ? cashIndex : 0;
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        amount: Number(next[index].amount || 0) + value,
+      };
+      return next;
+    });
+  };
+
+  const setCashExact = () => {
+    setPayments((prev) => {
+      if (!prev.length) return prev;
+      const cashIndex = prev.findIndex((payment) => isCashMethodCode(payment.method));
+      const index = cashIndex >= 0 ? cashIndex : 0;
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        amount: totals.total,
+      };
+      return next;
+    });
+  };
+
+  const holdCurrentTicket = () => {
+    if (!cart.length) {
+      setError('No hay items para guardar en espera.');
+      return;
+    }
+    const draftId = createOperationId();
+    const draft = {
+      draft_id: draftId,
+      created_at: new Date().toISOString(),
+      customer: selectedCustomer
+        ? {
+          customer_id: selectedCustomer.customer_id,
+          full_name: selectedCustomer.full_name || '',
+          document: selectedCustomer.document || '',
+        }
+        : null,
+      search_customer: searchCustomer,
+      sale_note: saleNote,
+      cart,
+      payments,
+    };
+    setTicketDrafts((prev) => [draft, ...prev].slice(0, 12));
+    clearSale();
+    setMessage(`Venta en espera guardada (${ticketDrafts.length + 1} borradores).`);
+  };
+
+  const resumeTicketDraft = (draftId) => {
+    const draft = ticketDrafts.find((item) => item.draft_id === draftId);
+    if (!draft) return;
+
+    setCart(Array.isArray(draft.cart) ? draft.cart : []);
+    setPayments(
+      Array.isArray(draft.payments) && draft.payments.length > 0
+        ? draft.payments.map((p) => ({
+          method: p.method || paymentMethods[0]?.code || '',
+          amount: Number(p.amount || 0),
+          reference: p.reference || '',
+        }))
+        : [{ method: paymentMethods[0]?.code || '', amount: 0, reference: '' }],
+    );
+    setSelectedCustomer(draft.customer || null);
+    setSearchCustomer(draft.search_customer || draft.customer?.full_name || '');
+    setSaleNote(draft.sale_note || '');
+    setTicketDrafts((prev) => prev.filter((item) => item.draft_id !== draftId));
+    setMessage('Venta recuperada desde espera.');
+  };
+
+  const discardTicketDraft = (draftId) => {
+    setTicketDrafts((prev) => prev.filter((item) => item.draft_id !== draftId));
+  };
+
   const clearSale = () => {
     setCart([]);
     setSaleNote('');
@@ -780,7 +1139,8 @@ export default function PointOfSaleScreen({
     setError('');
     setChatOrderText('');
     setChatOrderSummary(null);
-    setPayments([{ method: paymentMethods[0]?.code || '', amount: 0 }]);
+    setVoicePreviewText('');
+    setPayments([{ method: paymentMethods[0]?.code || '', amount: 0, reference: '' }]);
   };
 
   const handleProcessSale = async () => {
@@ -832,13 +1192,14 @@ export default function PointOfSaleScreen({
       const paymentsPayload = adjustedPayments.map((p) => ({
         payment_method_code: p.method,
         amount: Number(p.amount || 0),
-        reference: null,
+        reference: String(p.reference || '').trim() || null,
       }));
 
       const payload = {
         location_id: currentSession?.cash_register?.location_id || null,
         cash_session_id: currentSession?.cash_session_id || null,
         customer_id: selectedCustomer?.customer_id || null,
+        third_party_id: effectiveThirdPartyId,
         sold_by: userProfile.user_id,
         lines,
         payments: paymentsPayload,
@@ -974,8 +1335,8 @@ export default function PointOfSaleScreen({
             />
             <Pressable
               onPress={parseChatOrderWithAgent}
-              disabled={processingChatOrder}
-              style={[styles.chatOrderBtn, processingChatOrder && styles.btnDisabled]}
+              disabled={processingChatOrder || processingVoiceOrder}
+              style={[styles.chatOrderBtn, (processingChatOrder || processingVoiceOrder) && styles.btnDisabled]}
             >
               <View style={styles.btnContentRow}>
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color="#ecfeff" />
@@ -984,29 +1345,114 @@ export default function PointOfSaleScreen({
                 </Text>
               </View>
             </Pressable>
+            <Pressable
+              onPress={parseVoiceOrderWithVosk}
+              disabled={!voiceAvailable || processingChatOrder}
+              style={[
+                styles.voiceOrderBtn,
+                (!voiceAvailable || processingChatOrder) && styles.btnDisabled,
+                processingVoiceOrder && styles.voiceOrderBtnActive,
+              ]}
+            >
+              <View style={styles.btnContentRow}>
+                <Ionicons name="mic-outline" size={16} color="#ecfeff" />
+                <Text style={styles.voiceOrderBtnText}>
+                  {!voiceAvailable
+                    ? 'Voz no disponible (Vosk)'
+                    : processingVoiceOrder
+                      ? 'Escuchando... tocar para cancelar'
+                      : 'Comando por voz (Vosk)'}
+                </Text>
+              </View>
+            </Pressable>
+            {voicePreviewText ? (
+              <Text style={[styles.voicePreviewText, isLightTheme && styles.voicePreviewTextLight]}>
+                Voz: {voicePreviewText}
+              </Text>
+            ) : null}
+            <View style={[styles.embeddedLlmCard, isLightTheme && styles.embeddedLlmCardLight]}>
+              <Text style={[styles.embeddedLlmTitle, isLightTheme && styles.embeddedLlmTitleLight]}>
+                LLM Local Qwen (modo: {localLlmMode})
+              </Text>
+              <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                Runtime: {embeddedLlmStatus?.runtime?.runtime_available ? 'Disponible' : 'No disponible'}
+              </Text>
+              <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                Modelo:{' '}
+                {embeddedLlmStatus?.model?.available
+                  ? `${Number(embeddedLlmStatus?.model?.mb || 0)} MB listo`
+                  : 'No descargado'}
+              </Text>
+              {preparingEmbeddedLlm ? (
+                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                  Descargando modelo... {Math.round(embeddedDownloadProgress * 100)}%
+                </Text>
+              ) : null}
+              <Pressable
+                onPress={handlePrepareEmbeddedLlm}
+                disabled={preparingEmbeddedLlm}
+                style={[styles.embeddedLlmBtn, preparingEmbeddedLlm && styles.btnDisabled]}
+              >
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="download-outline" size={16} color="#ecfeff" />
+                  <Text style={styles.embeddedLlmBtnText}>
+                    {preparingEmbeddedLlm ? 'Preparando modelo...' : 'Descargar/actualizar modelo local'}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
         ) : null}
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Buscar producto (codigo, SKU o nombre)"
+          placeholder="Buscar producto (codigo, SKU o nombre). Lector: escanear + Enter"
           placeholderTextColor="#64748b"
           style={[styles.input, isLightTheme && styles.inputLight]}
+          onSubmitEditing={handleSearchInputSubmit}
         />
+        {favoriteVariants.length > 0 ? (
+          <View style={styles.favoritesWrap}>
+            <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Favoritos</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.favoritesRow}>
+                {favoriteVariants.map((fav) => (
+                  <Pressable
+                    key={`fav-${fav.variant_id}`}
+                    style={[styles.favoriteChip, isLightTheme && styles.favoriteChipLight]}
+                    onPress={() => addToCart(fav)}
+                  >
+                    <Text style={[styles.favoriteChipText, isLightTheme && styles.favoriteChipTextLight]}>
+                      {fav.product?.name || fav.variant_name || fav.sku}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        ) : null}
         {searchingProducts ? <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Buscando...</Text> : null}
         {results.slice(0, 8).map((item) => (
-          <Pressable
-            key={item.variant_id}
-            style={[styles.resultRow, isLightTheme && styles.resultRowLight]}
-            onPress={() => addToCart(item)}
-          >
-            <Text style={[styles.resultTitle, isLightTheme && styles.resultTitleLight]}>
-              {item.product?.name} {item.variant_name ? `- ${item.variant_name}` : ''}
-            </Text>
-            <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>
-              {item.sku} · {formatMoney(item.price)} · Stock: {item.stock_available ?? '-'}
-            </Text>
-          </Pressable>
+          <View key={item.variant_id} style={[styles.resultRow, isLightTheme && styles.resultRowLight]}>
+            <Pressable onPress={() => addToCart(item)} style={styles.resultInfoCol}>
+              <Text style={[styles.resultTitle, isLightTheme && styles.resultTitleLight]}>
+                {item.product?.name} {item.variant_name ? `- ${item.variant_name}` : ''}
+              </Text>
+              <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>
+                {item.sku} · {formatMoney(item.price)} · Stock: {item.stock_available ?? '-'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => toggleFavoriteVariant(item)}
+              style={[styles.favoriteBtn, isFavoriteVariant(item.variant_id) && styles.favoriteBtnActive]}
+            >
+              <Ionicons
+                name={isFavoriteVariant(item.variant_id) ? 'star' : 'star-outline'}
+                size={14}
+                color={isFavoriteVariant(item.variant_id) ? '#fef08a' : '#cbd5e1'}
+              />
+            </Pressable>
+          </View>
         ))}
         {invoiceScanSummary ? (
           <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
@@ -1061,6 +1507,11 @@ export default function PointOfSaleScreen({
                 Sin match: {chatOrderSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
               </Text>
             ) : null}
+            {commandEngineMetrics?.totals?.requests > 0 ? (
+              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                Engine hit-rate cache: {Math.round(Number(commandEngineMetrics?.totals?.hit_rate || 0) * 100)}%
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1089,6 +1540,53 @@ export default function PointOfSaleScreen({
             <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>{c.document || c.phone || '-'}</Text>
           </Pressable>
         ))}
+        <View style={styles.feSummaryRow}>
+          <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>
+            Documento a emitir: {effectiveThirdPartyId ? 'FE' : 'FV'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.panel, isLightTheme && styles.panelLight]}>
+        <View style={styles.aiHeaderRow}>
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ventas en espera</Text>
+          <Pressable
+            onPress={holdCurrentTicket}
+            disabled={cart.length === 0}
+            style={[styles.holdBtn, cart.length === 0 && styles.btnDisabled]}
+          >
+            <View style={styles.btnContentRow}>
+              <Ionicons name="pause-circle-outline" size={14} color="#ecfeff" />
+              <Text style={styles.holdBtnText}>Guardar en espera</Text>
+            </View>
+          </Pressable>
+        </View>
+        {!ticketDrafts.length ? (
+          <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>
+            Sin borradores en espera.
+          </Text>
+        ) : (
+          ticketDrafts.slice(0, 4).map((draft) => (
+            <View key={draft.draft_id} style={[styles.draftRow, isLightTheme && styles.draftRowLight]}>
+              <View style={styles.draftInfo}>
+                <Text style={[styles.resultTitle, isLightTheme && styles.resultTitleLight]}>
+                  {draft.customer?.full_name || 'Consumidor final'} · {draft.cart?.length || 0} item(s)
+                </Text>
+                <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>
+                  {new Date(draft.created_at).toLocaleString()}
+                </Text>
+              </View>
+              <View style={styles.draftActions}>
+                <Pressable style={[styles.actionMiniBtn, styles.detailMiniBtn]} onPress={() => resumeTicketDraft(draft.draft_id)}>
+                  <Text style={styles.actionMiniText}>Retomar</Text>
+                </Pressable>
+                <Pressable style={[styles.actionMiniBtn, styles.removeMiniBtn]} onPress={() => discardTicketDraft(draft.draft_id)}>
+                  <Text style={styles.actionMiniText}>Quitar</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
@@ -1188,6 +1686,13 @@ export default function PointOfSaleScreen({
               keyboardType="numeric"
               style={[styles.paymentInput, isLightTheme && styles.paymentInputLight]}
             />
+            <TextInput
+              value={String(p.reference || '')}
+              onChangeText={(v) => updatePayment(i, { reference: v })}
+              placeholder="Referencia (opcional)"
+              placeholderTextColor="#64748b"
+              style={[styles.paymentRefInput, isLightTheme && styles.paymentInputLight]}
+            />
             <Pressable onPress={() => removePayment(i)} style={styles.paymentRemove}>
               <Text style={styles.removeBtn}>x</Text>
             </Pressable>
@@ -1199,6 +1704,16 @@ export default function PointOfSaleScreen({
             <Text style={[styles.addPaymentText, isLightTheme && styles.addPaymentTextLight]}>Agregar pago</Text>
           </View>
         </Pressable>
+        <View style={styles.quickCashWrap}>
+          <Pressable onPress={setCashExact} style={[styles.quickCashBtn, styles.quickCashExactBtn]}>
+            <Text style={styles.quickCashText}>Exacto</Text>
+          </Pressable>
+          {QUICK_CASH_AMOUNTS.map((value) => (
+            <Pressable key={`cash-${value}`} onPress={() => applyQuickCash(value)} style={styles.quickCashBtn}>
+              <Text style={styles.quickCashText}>+{formatMoney(value)}</Text>
+            </Pressable>
+          ))}
+        </View>
         {change > 0 ? <Text style={styles.okText}>Cambio: {formatMoney(change)}</Text> : null}
         {remaining > 0 ? <Text style={styles.warnText}>Falta: {formatMoney(remaining)}</Text> : null}
       </View>
@@ -1372,6 +1887,98 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+  voiceOrderBtn: {
+    backgroundColor: '#0f3f76',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  voiceOrderBtnActive: {
+    backgroundColor: '#7c2d12',
+  },
+  voiceOrderBtnText: {
+    color: '#ecfeff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  voicePreviewText: {
+    color: '#bae6fd',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  voicePreviewTextLight: {
+    color: '#0369a1',
+  },
+  embeddedLlmCard: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    padding: 8,
+    backgroundColor: '#0b1b2f',
+    marginBottom: 6,
+  },
+  embeddedLlmCardLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#eef6ff',
+  },
+  embeddedLlmTitle: {
+    color: '#dbeafe',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  embeddedLlmTitleLight: {
+    color: '#1e3a8a',
+  },
+  embeddedLlmMeta: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  embeddedLlmMetaLight: {
+    color: '#334155',
+  },
+  embeddedLlmBtn: {
+    marginTop: 6,
+    backgroundColor: '#1d4ed8',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  embeddedLlmBtnText: {
+    color: '#eff6ff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  favoritesWrap: {
+    marginBottom: 6,
+  },
+  favoritesRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingTop: 4,
+  },
+  favoriteChip: {
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#1e293b',
+  },
+  favoriteChipLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+  },
+  favoriteChipText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  favoriteChipTextLight: {
+    color: '#334155',
+  },
   invoiceSummaryCard: {
     marginTop: 8,
     borderWidth: 1,
@@ -1440,9 +2047,29 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#243041',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   resultRowLight: {
     borderTopColor: '#e2e8f0',
+  },
+  resultInfoCol: {
+    flex: 1,
+  },
+  favoriteBtn: {
+    marginLeft: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1e293b',
+  },
+  favoriteBtnActive: {
+    borderColor: '#eab308',
+    backgroundColor: '#422006',
   },
   resultTitle: {
     color: '#f8fafc',
@@ -1459,6 +2086,66 @@ const styles = StyleSheet.create({
   },
   resultMetaLight: {
     color: '#64748b',
+  },
+  feSummaryRow: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#243041',
+    paddingTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  holdBtn: {
+    borderWidth: 1,
+    borderColor: '#0f766e',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#115e59',
+  },
+  holdBtnText: {
+    color: '#ccfbf1',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  draftRow: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    backgroundColor: '#0f172a',
+    padding: 8,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  draftRowLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fafc',
+  },
+  draftInfo: {
+    flex: 1,
+  },
+  draftActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  actionMiniBtn: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  detailMiniBtn: {
+    backgroundColor: '#1d4ed8',
+  },
+  removeMiniBtn: {
+    backgroundColor: '#7f1d1d',
+  },
+  actionMiniText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
   },
   lineCard: {
     marginBottom: 8,
@@ -1660,6 +2347,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: '#111827',
   },
+  paymentRefInput: {
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 8,
+    color: '#f8fafc',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: '#111827',
+    marginTop: 6,
+  },
   paymentInputLight: {
     borderColor: '#cbd5e1',
     color: '#0f172a',
@@ -1684,6 +2381,29 @@ const styles = StyleSheet.create({
   },
   addPaymentTextLight: {
     color: '#334155',
+  },
+  quickCashWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  quickCashBtn: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#0f172a',
+  },
+  quickCashExactBtn: {
+    borderColor: '#0369a1',
+    backgroundColor: '#0c4a6e',
+  },
+  quickCashText: {
+    color: '#dbeafe',
+    fontSize: 12,
+    fontWeight: '700',
   },
   okText: {
     color: '#4ade80',

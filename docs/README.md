@@ -2,6 +2,17 @@
 
 Este directorio contiene la documentación del sistema POS Lite.
 
+## 📚 Contexto Técnico Mobile
+
+- Documento recomendado para contexto rápido del proyecto mobile:
+  - `/docs/MOBILE_CONTEXT.md`
+- Checklist de estado y prioridades:
+  - `/docs/MOBILE_IMPLEMENTATION_CHECKLIST.md`
+- Analisis de competitividad del POS mobile:
+  - `/docs/POS_COMPETITIVE_GAP_ANALYSIS_2026.md`
+- Setup de LLM local (Qwen2.5-1.5B + Ollama):
+  - `/docs/QWEN_LOCAL_LLM_SETUP.md`
+
 ## 📘 Manual de Usuario
 
 El manual de usuario completo está disponible en dos ubicaciones:

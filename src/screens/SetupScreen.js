@@ -7,7 +7,7 @@ const OPTIONS = [
   { key: 'TaxRules', title: 'Reglas de Impuesto', subtitle: 'Asignacion de impuesto por alcance' },
   { key: 'PricingRules', title: 'Reglas de Precio', subtitle: 'Precios por sede/regla comercial' },
   { key: 'Users', title: 'Usuarios', subtitle: 'Usuarios del tenant y roles' },
-  { key: 'RolesMenus', title: 'Roles y Menus', subtitle: 'Gestion centralizada por superadmin' },
+  { key: 'RolesMenus', title: 'Roles y Menus', subtitle: 'Roles, permisos y asignacion de menus' },
 ];
 
 export default function SetupScreen({ onOpenScreen, themeMode = 'dark' }) {

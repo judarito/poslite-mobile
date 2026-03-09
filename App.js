@@ -6,7 +6,6 @@ import {
   AppState,
   Appearance,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -16,11 +15,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { supabase } from './src/lib/supabase';
 import { ThemeModeProvider } from './src/lib/themeMode';
+import { normalizeThemePreference, resolveThemeMode } from './src/lib/themePreferences';
 import {
   clearAuthCache,
   clearMenuCache,
@@ -32,6 +31,11 @@ import {
   saveAuthCache,
 } from './src/storage/sqlite/database';
 import { annotateMenuTreeWithSupport } from './src/navigation/menuMapper';
+import {
+  getMobileAppBarTitle,
+  isMobileScreenSupported,
+  resolveReportsInitialTab,
+} from './src/navigation/mobileScreenConfig';
 import { fetchUserMenus, isFreshCache } from './src/services/menu.service';
 import { getDashboardSummary } from './src/services/reports.service';
 import { syncPendingOperations } from './src/services/sync.service';
@@ -82,13 +86,17 @@ import ProductsScreen from './src/screens/ProductsScreen';
 import PurchasesScreen from './src/screens/PurchasesScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
 import SalesHistoryScreen from './src/screens/SalesHistoryScreen';
-import SetupPlaceholderScreen from './src/screens/SetupPlaceholderScreen';
+import LoginScreen from './src/screens/LoginScreen';
 import SetupScreen from './src/screens/SetupScreen';
+import TaxRulesScreen from './src/screens/TaxRulesScreen';
 import TaxesScreen from './src/screens/TaxesScreen';
 import TenantConfigScreen from './src/screens/TenantConfigScreen';
 import ThirdPartiesScreen from './src/screens/ThirdPartiesScreen';
 import UnitsScreen from './src/screens/UnitsScreen';
 import LocationsScreen from './src/screens/LocationsScreen';
+import PricingRulesScreen from './src/screens/PricingRulesScreen';
+import UsersScreen from './src/screens/UsersScreen';
+import RolesMenusScreen from './src/screens/RolesMenusScreen';
 
 export default function App() {
   const androidTopInset = Platform.OS === 'android' ? RNStatusBar.currentHeight || 0 : 0;
@@ -165,6 +173,35 @@ export default function App() {
     });
   }, []);
 
+  const applyThemeFromLocalCache = async (cachedAuth = null) => {
+    const cached = cachedAuth || (await getAuthCache());
+    const tenantId = cached?.tenant?.tenant_id || null;
+    const userId = cached?.userProfile?.user_id || null;
+
+    if (!tenantId || !userId) {
+      setThemePreference('dark');
+      setThemeMode('dark');
+      return;
+    }
+
+    const cachedThemeResult = await getCachedUserThemePreference(tenantId, userId);
+    const cachedTheme = cachedThemeResult?.data?.theme
+      ? normalizeThemePreference(cachedThemeResult.data.theme)
+      : null;
+
+    if (cachedTheme) {
+      setThemePreference(cachedTheme);
+      setThemeMode(resolveThemeMode(cachedTheme));
+      return;
+    }
+
+    const tenantSettingsResult = await getTenantSettings(tenantId, { offlineMode: true });
+    const fallbackTenantTheme = normalizeThemePreference(tenantSettingsResult?.data?.theme || 'dark');
+    setThemePreference(fallbackTenantTheme);
+    setThemeMode(resolveThemeMode(fallbackTenantTheme));
+    await setCachedUserThemePreference(tenantId, userId, fallbackTenantTheme);
+  };
+
   useEffect(() => {
     configurePushNotifications();
     let mounted = true;
@@ -187,6 +224,7 @@ export default function App() {
           setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
           setMenuCachedAt(cachedMenu.cachedAt);
         }
+        await applyThemeFromLocalCache(cached);
 
         const { data, error: sessionError } = await supabase.auth.getSession();
         if (!mounted) return;
@@ -238,13 +276,12 @@ export default function App() {
         setCurrentScreen('Home');
         setScreenHistory([]);
         setReportsInitialTab('sales');
-        setThemePreference('dark');
-        setThemeMode('dark');
         setOfflineMode(false);
         setMenuTree([]);
         setMenuCachedAt('');
         setExpandedSections({});
         setMenuOpen(false);
+        await applyThemeFromLocalCache();
       }
     });
 
@@ -405,21 +442,6 @@ export default function App() {
       return String(value);
     }
   };
-  const normalizeThemePreference = (value) => {
-    const raw = String(value || '').trim().toLowerCase();
-    if (raw === 'auto' || raw === 'system') return 'auto';
-    if (raw === 'light') return 'light';
-    return 'dark';
-  };
-  const resolveThemeMode = (preference) => {
-    const normalized = normalizeThemePreference(preference);
-    if (normalized === 'auto') {
-      const scheme = Appearance.getColorScheme();
-      return scheme === 'light' ? 'light' : 'dark';
-    }
-    return normalized;
-  };
-
   const loadMenusForUser = async (authUserId, { preferFreshCache = true } = {}) => {
     if (!authUserId) return [];
 
@@ -673,45 +695,9 @@ export default function App() {
       return;
     }
 
-    if (
-      [
-        'PointOfSale',
-        'Sales',
-        'Layaway',
-        'ThirdParties',
-        'Cartera',
-        'Products',
-        'Categories',
-        'Units',
-        'BulkImports',
-        'Inventory',
-        'Batches',
-        'Purchases',
-        'ProductionOrders',
-        'BOMs',
-        'CashSessions',
-        'CashRegisters',
-        'CashAssignments',
-        'PaymentMethods',
-        'Reports',
-        'Setup',
-        'TenantConfig',
-        'Locations',
-        'Taxes',
-        'TaxRules',
-        'PricingRules',
-        'Users',
-        'RolesMenus',
-        'About',
-      ].includes(item.targetScreen)
-    ) {
+    if (isMobileScreenSupported(item.targetScreen)) {
       if (item.targetScreen === 'Reports') {
-        const route = String(item.route || '').toLowerCase();
-        if (route.includes('/reports/cajas')) setReportsInitialTab('cash');
-        else if (route.includes('/reports/inventario')) setReportsInitialTab('inventory');
-        else if (route.includes('/reports/financiero')) setReportsInitialTab('financial');
-        else if (route.includes('/reports/produccion')) setReportsInitialTab('production');
-        else setReportsInitialTab('sales');
+        setReportsInitialTab(resolveReportsInitialTab(item.route));
       }
       navigateToScreen(item.targetScreen);
       setLastMenuAction('');
@@ -803,8 +789,6 @@ export default function App() {
       setUserProfile(enriched);
       setTenant(tenantData);
       setOfflineMode(false);
-      setThemePreference('dark');
-      setThemeMode('dark');
 
       await saveAuthCache({
         authUserId,
@@ -991,8 +975,6 @@ export default function App() {
       setTenantSettings({});
       resetToHome();
       setReportsInitialTab('sales');
-      setThemePreference('dark');
-      setThemeMode('dark');
       setMenuTree([]);
       setMenuCachedAt('');
       setExpandedSections({});
@@ -1001,6 +983,7 @@ export default function App() {
       setNotificationsOpen(false);
       setNotifications([]);
       setUnreadNotifications(0);
+      await applyThemeFromLocalCache();
       return;
     }
 
@@ -1023,8 +1006,6 @@ export default function App() {
     setPaymentMethodsSeries([]);
     resetToHome();
     setReportsInitialTab('sales');
-    setThemePreference('dark');
-    setThemeMode('dark');
     setMenuTree([]);
     setMenuCachedAt('');
     setExpandedSections({});
@@ -1033,6 +1014,7 @@ export default function App() {
     setNotificationsOpen(false);
     setNotifications([]);
     setUnreadNotifications(0);
+    await applyThemeFromLocalCache();
   };
 
   const handleUseOfflineMode = async () => {
@@ -1109,121 +1091,23 @@ export default function App() {
   if (!session && !offlineMode) {
     return (
       <ThemeModeProvider mode={themeMode}>
-        <SafeAreaView style={isLightTheme ? styles.loginRootLight : styles.loginRootDark}>
-          <View style={[styles.loginGlowTop, isLightTheme && styles.loginGlowTopLight]} />
-          <View style={[styles.loginGlowBottom, isLightTheme && styles.loginGlowBottomLight]} />
-          <KeyboardAvoidingView
-            style={styles.loginWrapper}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <ScrollView contentContainerStyle={styles.loginScroll} keyboardShouldPersistTaps="handled">
-              <View style={[styles.loginCard, isLightTheme && styles.loginCardLight]}>
-                <View style={styles.loginBrandRow}>
-                  <View style={[styles.loginBrandIconWrap, isLightTheme && styles.loginBrandIconWrapLight]}>
-                    <Ionicons
-                      name="storefront-outline"
-                      size={22}
-                      color={isLightTheme ? '#1d4ed8' : '#93c5fd'}
-                    />
-                  </View>
-                  <View style={styles.loginBrandTextWrap}>
-                    <Text style={[styles.loginTitle, isLightTheme && styles.loginTitleLight]}>POSLite Mobile</Text>
-                    <Text style={[styles.loginSubtitle, isLightTheme && styles.loginSubtitleLight]}>
-                      Accede a tu punto de venta
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={[styles.loginSectionLabel, isLightTheme && styles.loginSectionLabelLight]}>Correo</Text>
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  keyboardType="email-address"
-                  placeholder="tu@empresa.com"
-                  placeholderTextColor="#64748b"
-                  style={[styles.loginInput, isLightTheme && styles.loginInputLight]}
-                />
-
-                <Text style={[styles.loginSectionLabel, isLightTheme && styles.loginSectionLabelLight]}>Contrasena</Text>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  placeholder="••••••••"
-                  placeholderTextColor="#64748b"
-                  style={[styles.loginInput, isLightTheme && styles.loginInputLight]}
-                />
-
-                {error ? <Text style={styles.loginErrorText}>{error}</Text> : null}
-
-                <Pressable
-                  onPress={handleLogin}
-                  disabled={loadingAuth}
-                  style={[styles.loginPrimaryButton, loadingAuth && styles.primaryButtonDisabled]}
-                >
-                  <View style={styles.btnContentRow}>
-                    <Ionicons name={loadingAuth ? 'hourglass-outline' : 'log-in-outline'} size={16} color="#ffffff" />
-                    <Text style={styles.loginPrimaryButtonText}>
-                      {loadingAuth ? 'Ingresando...' : 'Ingresar'}
-                    </Text>
-                  </View>
-                </Pressable>
-
-                {offlineAvailable ? (
-                  <View style={[styles.loginOfflineCard, isLightTheme && styles.loginOfflineCardLight]}>
-                    <Pressable onPress={handleUseOfflineMode} style={styles.loginSecondaryButton}>
-                      <Text style={styles.loginSecondaryButtonText}>Continuar sin conexion</Text>
-                    </Pressable>
-                    <Text style={[styles.loginOfflineMeta, isLightTheme && styles.loginOfflineMetaLight]}>
-                      Ultimo cache: {new Date(cachedAt).toLocaleString()}
-                    </Text>
-                    <Pressable onPress={handleClearOfflineCache} style={styles.linkButton}>
-                      <Text style={styles.linkButtonText}>Limpiar cache offline</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-          <StatusBar style={isLightTheme ? 'dark' : 'light'} />
-        </SafeAreaView>
+        <LoginScreen
+          email={email}
+          password={password}
+          error={error}
+          loadingAuth={loadingAuth}
+          offlineAvailable={offlineAvailable}
+          cachedAt={cachedAt}
+          onEmailChange={setEmail}
+          onPasswordChange={setPassword}
+          onLogin={handleLogin}
+          onUseOfflineMode={handleUseOfflineMode}
+          onClearOfflineCache={handleClearOfflineCache}
+        />
       </ThemeModeProvider>
     );
   }
 
-  const appBarTitleByScreen = {
-    Home: 'POSLite Mobile',
-    PointOfSale: 'Punto de Venta',
-    Sales: 'Historial Ventas',
-    Layaway: 'Plan Separe',
-    ThirdParties: 'Terceros',
-    Cartera: 'Cartera',
-    Products: 'Productos',
-    Categories: 'Categorias',
-    Units: 'Unidades de Medida',
-    BulkImports: 'Carga Masiva',
-    Inventory: 'Inventario',
-    Batches: 'Lotes y Vencimientos',
-    Purchases: 'Compras',
-    ProductionOrders: 'Ordenes de Produccion',
-    BOMs: 'Listas de Materiales',
-    CashSessions: 'Sesiones de Caja',
-    CashRegisters: 'Cajas Registradoras',
-    CashAssignments: 'Asignacion de Cajas',
-    PaymentMethods: 'Metodos de Pago',
-    Reports: 'Reportes',
-    Setup: 'Configuracion',
-    TenantConfig: 'Config Empresa',
-    Locations: 'Sedes',
-    Taxes: 'Impuestos',
-    TaxRules: 'Reglas de Impuesto',
-    PricingRules: 'Reglas de Precio',
-    Users: 'Usuarios',
-    RolesMenus: 'Roles y Menus',
-    About: 'Acerca de',
-  };
   const isLocalLightMode = themeMode === 'light';
 
   return (
@@ -1243,7 +1127,7 @@ export default function App() {
           <Text style={styles.menuTriggerText}>☰</Text>
         </Pressable>
         <Text style={[styles.appBarTitle, isLightTheme ? styles.appBarTitleLight : null]}>
-          {appBarTitleByScreen[currentScreen] || 'POSLite Mobile'}
+          {getMobileAppBarTitle(currentScreen)}
         </Text>
         <View style={styles.appBarRight}>
           <Pressable
@@ -1586,28 +1470,33 @@ export default function App() {
       ) : currentScreen === 'Taxes' ? (
         <TaxesScreen tenant={tenant} themeMode={themeMode} offlineMode={offlineMode} pageSize={defaultPageSize} />
       ) : currentScreen === 'TaxRules' ? (
-        <SetupPlaceholderScreen
+        <TaxRulesScreen
+          tenant={tenant}
           themeMode={themeMode}
-          title="Reglas de Impuesto"
-          message="Pendiente de portar en mobile: reglas por categoria/producto/variante como en la web."
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
         />
       ) : currentScreen === 'PricingRules' ? (
-        <SetupPlaceholderScreen
+        <PricingRulesScreen
+          tenant={tenant}
           themeMode={themeMode}
-          title="Reglas de Precio"
-          message="Pendiente de portar en mobile: reglas por sede, prioridad y vigencia."
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
         />
       ) : currentScreen === 'Users' ? (
-        <SetupPlaceholderScreen
+        <UsersScreen
+          tenant={tenant}
           themeMode={themeMode}
-          title="Usuarios"
-          message="Pendiente de portar en mobile: gestion de usuarios y asignacion de roles."
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
         />
       ) : currentScreen === 'RolesMenus' ? (
-        <SetupPlaceholderScreen
+        <RolesMenusScreen
+          tenant={tenant}
+          userProfile={userProfile}
           themeMode={themeMode}
-          title="Roles y Menus"
-          message="Este modulo es administrado por superadmin en la web. En mobile queda de solo consulta futura."
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
         />
       ) : currentScreen === 'About' ? (
         <AboutScreen tenant={tenant} userProfile={userProfile} themeMode={themeMode} offlineMode={offlineMode} />
@@ -2305,194 +2194,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#334155',
   },
-  loginRootDark: {
-    flex: 1,
-    backgroundColor: '#020617',
-  },
-  loginRootLight: {
-    flex: 1,
-    backgroundColor: '#eff6ff',
-  },
-  loginGlowTop: {
-    position: 'absolute',
-    top: -90,
-    right: -40,
-    width: 260,
-    height: 260,
-    borderRadius: 999,
-    backgroundColor: '#1d4ed8',
-    opacity: 0.24,
-  },
-  loginGlowTopLight: {
-    backgroundColor: '#60a5fa',
-    opacity: 0.22,
-  },
-  loginGlowBottom: {
-    position: 'absolute',
-    bottom: -120,
-    left: -70,
-    width: 310,
-    height: 310,
-    borderRadius: 999,
-    backgroundColor: '#0f766e',
-    opacity: 0.22,
-  },
-  loginGlowBottomLight: {
-    backgroundColor: '#2dd4bf',
-    opacity: 0.18,
-  },
-  loginWrapper: {
-    flex: 1,
-  },
-  loginScroll: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-  },
-  loginCard: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    backgroundColor: '#0b1220',
-    padding: 16,
-    shadowColor: '#020617',
-    shadowOpacity: 0.35,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
-    elevation: 7,
-  },
-  loginCardLight: {
-    borderColor: '#dbeafe',
-    backgroundColor: '#ffffff',
-    shadowColor: '#1d4ed8',
-    shadowOpacity: 0.13,
-  },
-  loginBrandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  loginBrandIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  loginBrandIconWrapLight: {
-    backgroundColor: '#eef2ff',
-    borderColor: '#bfdbfe',
-  },
-  loginBrandTextWrap: {
-    marginLeft: 10,
-    flex: 1,
-  },
-  loginTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#f8fafc',
-    letterSpacing: 0.2,
-  },
-  loginTitleLight: {
-    color: '#0f172a',
-  },
-  loginSubtitle: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  loginSubtitleLight: {
-    color: '#475569',
-  },
-  loginSectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    color: '#cbd5e1',
-    marginBottom: 6,
-  },
-  loginSectionLabelLight: {
-    color: '#334155',
-  },
-  loginInput: {
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
-    color: '#f8fafc',
-  },
-  loginInputLight: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
-    color: '#0f172a',
-  },
-  loginPrimaryButton: {
-    backgroundColor: '#1d4ed8',
-    paddingVertical: 13,
-    borderRadius: 12,
-    marginTop: 6,
-  },
-  btnContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  loginPrimaryButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 15,
-  },
-  loginOfflineCard: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 12,
-    backgroundColor: '#0f172a',
-    padding: 10,
-  },
-  loginOfflineCardLight: {
-    borderColor: '#dbeafe',
-    backgroundColor: '#f8fafc',
-  },
-  loginSecondaryButton: {
-    borderWidth: 1,
-    borderColor: '#475569',
-    borderRadius: 10,
-    paddingVertical: 11,
-    backgroundColor: '#1f2937',
-  },
-  loginSecondaryButtonText: {
-    textAlign: 'center',
-    color: '#f8fafc',
-    fontWeight: '700',
-  },
-  loginOfflineMeta: {
-    marginTop: 8,
-    color: '#94a3b8',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  loginOfflineMetaLight: {
-    color: '#475569',
-  },
-  loginErrorText: {
-    marginTop: 2,
-    marginBottom: 4,
-    color: '#f87171',
-    fontSize: 13,
-  },
-  primaryButtonDisabled: {
-    opacity: 0.7,
-  },
   homeWrap: {
     paddingHorizontal: 14,
     paddingTop: 12,
@@ -3034,16 +2735,6 @@ const styles = StyleSheet.create({
   successText: {
     marginTop: 8,
     color: '#4ade80',
-    fontSize: 13,
-  },
-  linkButton: {
-    marginTop: 10,
-    alignSelf: 'center',
-    paddingVertical: 4,
-  },
-  linkButtonText: {
-    color: '#93c5fd',
-    textDecorationLine: 'underline',
     fontSize: 13,
   },
 });

@@ -17,6 +17,10 @@ function sessionCacheKey(tenantId, userId) {
   return `pos-open-session:${tenantId}:${userId}`;
 }
 
+function normalizeSearchText(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 export async function getPaymentMethodsForDropdown(tenantId, { offlineMode = false } = {}) {
   const cacheKey = paymentMethodsCacheKey(tenantId);
   if (offlineMode) {
@@ -371,6 +375,80 @@ export async function getTaxInfoForVariant(tenantId, variantId) {
   }
 }
 
+export async function findVariantByCode(tenantId, code, locationId = null, { offlineMode = false } = {}) {
+  const query = String(code || '').trim();
+  if (!query) return { success: false, error: 'Codigo vacio', data: null };
+
+  const normalizedCode = normalizeSearchText(query);
+  const matchByFields = (list = []) => {
+    const exact = list.find((item) => normalizeSearchText(item?.sku) === normalizedCode);
+    if (exact) return exact;
+    return list[0] || null;
+  };
+
+  if (offlineMode) {
+    const cachedResult = await searchVariantsOffline(tenantId, query, 25, locationId);
+    if (!cachedResult.success || !cachedResult.data?.length) {
+      return { success: false, error: 'No se encontro variante por codigo en cache local.', data: null };
+    }
+    const found = matchByFields(cachedResult.data);
+    return found
+      ? { success: true, data: found, source: cachedResult.source || 'cache' }
+      : { success: false, error: 'No se encontro variante por codigo en cache local.', data: null };
+  }
+
+  try {
+    const { data: barcodeHit, error: barcodeErr } = await supabase
+      .from('product_barcodes')
+      .select('variant_id')
+      .eq('tenant_id', tenantId)
+      .eq('barcode', query)
+      .maybeSingle();
+    if (barcodeErr) throw barcodeErr;
+
+    if (barcodeHit?.variant_id) {
+      const { data: variant, error: variantErr } = await supabase
+        .from('product_variants')
+        .select(
+          `
+            variant_id, sku, variant_name, cost, price, price_includes_tax, is_active, is_component,
+            product:product_id(product_id, name, is_component)
+          `,
+        )
+        .eq('tenant_id', tenantId)
+        .eq('variant_id', barcodeHit.variant_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (variantErr) throw variantErr;
+      if (variant) return { success: true, data: variant };
+    }
+
+    const searchResult = await searchVariants(tenantId, query, 25, locationId);
+    if (!searchResult.success || !searchResult.data?.length) {
+      return { success: false, error: 'No se encontro variante por codigo.', data: null };
+    }
+    const found = matchByFields(searchResult.data);
+    if (!found) {
+      return { success: false, error: 'No se encontro variante por codigo.', data: null };
+    }
+    return { success: true, data: found, source: searchResult.source || 'server' };
+  } catch (error) {
+    const cachedResult = await searchVariantsOffline(tenantId, query, 25, locationId);
+    if (cachedResult.success && cachedResult.data?.length) {
+      const found = matchByFields(cachedResult.data);
+      if (found) {
+        return {
+          success: true,
+          data: found,
+          source: 'cache',
+          warning: error.message,
+        };
+      }
+    }
+    return { success: false, error: error.message, data: null };
+  }
+}
+
 export async function createSale(tenantId, saleData) {
   try {
     const operationId = saleData.operation_id || null;
@@ -388,7 +466,7 @@ export async function createSale(tenantId, saleData) {
         p_lines: saleData.lines,
         p_payments: saleData.payments,
         p_note: saleData.note || null,
-        p_third_party: null,
+        p_third_party: saleData.third_party_id || null,
       });
       data = idempotentResult.data;
       error = idempotentResult.error;
@@ -402,7 +480,7 @@ export async function createSale(tenantId, saleData) {
         p_lines: saleData.lines,
         p_payments: saleData.payments,
         p_note: saleData.note || null,
-        p_third_party: null,
+        p_third_party: saleData.third_party_id || null,
       });
       data = regularResult.data;
       error = regularResult.error;

@@ -24,6 +24,14 @@ export async function getSales(tenantId, page = 1, pageSize = 20, filters = {}) 
           sale_number,
           sold_at,
           status,
+          third_party_id,
+          invoice_type,
+          dian_status,
+          dian_consecutive,
+          cufe,
+          qr_url,
+          dian_sent_at,
+          email_sent_at,
           subtotal,
           tax_total,
           discount_total,
@@ -77,6 +85,14 @@ export async function getPendingOfflineSales(tenantId, filters = {}) {
           sale_number: `OFF-${String(op.opId || '').slice(-6).toUpperCase()}`,
           sold_at: op.createdAt,
           status,
+          third_party_id: payload.third_party_id || null,
+          invoice_type: payload.third_party_id ? 'FE' : 'FV',
+          dian_status: null,
+          dian_consecutive: null,
+          cufe: null,
+          qr_url: null,
+          dian_sent_at: null,
+          email_sent_at: null,
           subtotal: total,
           tax_total: 0,
           discount_total: 0,
@@ -277,12 +293,24 @@ export async function getSaleById(tenantId, saleId) {
           sale_number,
           sold_at,
           status,
+          third_party_id,
+          invoice_type,
+          resolution_id,
+          dian_consecutive,
+          cufe,
+          qr_url,
+          xml_path,
+          dian_status,
+          dian_response,
+          dian_sent_at,
+          email_sent_at,
           note,
           subtotal,
           tax_total,
           discount_total,
           total,
           customer:customer_id(customer_id, full_name, document, phone),
+          third_party:third_party_id(third_party_id, legal_name, document_number, fiscal_email),
           sold_by_user:sold_by(full_name),
           location:location_id(name),
           sale_lines(
@@ -311,6 +339,63 @@ export async function getSaleById(tenantId, saleId) {
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message, data: null };
+  }
+}
+
+function isMissingRpcError(error) {
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    msg.includes('could not find') ||
+    msg.includes('does not exist') ||
+    msg.includes('function') && msg.includes('not found')
+  );
+}
+
+export async function retrySaleElectronicInvoicing(tenantId, saleId) {
+  if (!tenantId || !saleId) {
+    return { success: false, error: 'tenantId y saleId son requeridos' };
+  }
+
+  const rpcCandidates = [
+    { name: 'sp_retry_sale_fe', args: { p_tenant: tenantId, p_sale_id: saleId } },
+    { name: 'sp_retry_sale_electronic_invoice', args: { p_tenant: tenantId, p_sale_id: saleId } },
+    { name: 'fn_retry_sale_fe', args: { p_tenant: tenantId, p_sale_id: saleId } },
+    { name: 'fn_retry_sale_electronic_invoice', args: { p_tenant: tenantId, p_sale_id: saleId } },
+  ];
+
+  let lastError = null;
+  for (const candidate of rpcCandidates) {
+    const response = await supabase.rpc(candidate.name, candidate.args);
+    if (!response.error) {
+      return { success: true, data: response.data, mode: 'rpc', rpc: candidate.name };
+    }
+    if (isMissingRpcError(response.error)) {
+      lastError = response.error;
+      continue;
+    }
+    return { success: false, error: response.error.message };
+  }
+
+  try {
+    const resetPayload = {
+      dian_status: 'PENDING',
+      dian_sent_at: null,
+      dian_response: null,
+    };
+    const { data, error } = await supabase
+      .from('sales')
+      .update(resetPayload)
+      .eq('tenant_id', tenantId)
+      .eq('sale_id', saleId)
+      .select('sale_id, dian_status')
+      .single();
+    if (error) throw error;
+    return { success: true, data, mode: 'manual_reset' };
+  } catch (error) {
+    const fallbackMessage = lastError?.message
+      ? `${error.message}. RPC FE no disponible: ${lastError.message}`
+      : error.message;
+    return { success: false, error: fallbackMessage };
   }
 }
 
