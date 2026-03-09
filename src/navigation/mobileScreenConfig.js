@@ -1,5 +1,5 @@
 export const MOBILE_APP_BAR_TITLES = {
-  Home: 'POSLite Mobile',
+  Home: 'OfirOne',
   PointOfSale: 'Punto de Venta',
   Sales: 'Historial Ventas',
   Layaway: 'Plan Separe',
@@ -62,7 +62,7 @@ const MOBILE_SUPPORTED_SCREENS = new Set([
 ]);
 
 export function getMobileAppBarTitle(screen) {
-  return MOBILE_APP_BAR_TITLES[screen] || 'POSLite Mobile';
+  return MOBILE_APP_BAR_TITLES[screen] || 'OfirOne';
 }
 
 export function isMobileScreenSupported(screen) {

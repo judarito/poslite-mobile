@@ -1,4 +1,5 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Paths } from 'expo-file-system';
 
 const DEFAULT_MODEL_URL =
   process.env.EXPO_PUBLIC_EMBEDDED_LLM_MODEL_URL ||
@@ -15,7 +16,12 @@ function resolveModelFileName() {
 }
 
 function resolveBaseDirectory() {
-  return FileSystem.documentDirectory || FileSystem.cacheDirectory || null;
+  const legacy = FileSystem.documentDirectory || FileSystem.cacheDirectory || null;
+  if (legacy) return legacy;
+
+  const modern = Paths?.document?.uri || Paths?.cache?.uri || null;
+  if (!modern) return null;
+  return modern.endsWith('/') ? modern : `${modern}/`;
 }
 
 function safeRoundMb(bytes) {

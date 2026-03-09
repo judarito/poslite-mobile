@@ -49,6 +49,27 @@ function computeP95(samples) {
   return list[index] || 0;
 }
 
+function normalizeBucketMap(rawMap) {
+  if (!rawMap || typeof rawMap !== 'object') return {};
+  const output = {};
+  Object.entries(rawMap).forEach(([key, value]) => {
+    const cleanKey = String(key || '').trim();
+    if (!cleanKey) return;
+    const count = Math.max(0, Math.round(toNumber(value, 0)));
+    if (!count) return;
+    output[cleanKey] = count;
+  });
+  return output;
+}
+
+function incrementBucket(map, key) {
+  const cleanKey = String(key || '').trim();
+  if (!cleanKey) return map || {};
+  const base = normalizeBucketMap(map);
+  base[cleanKey] = Number(base[cleanKey] || 0) + 1;
+  return base;
+}
+
 export async function recordCommandEngineMetric({
   tenantId,
   layer,
@@ -87,6 +108,45 @@ export async function recordCommandEngineMetric({
   await saveSimpleCache(key, {
     totals,
     layers,
+    resolution: prev?.resolution || { total: 0, sources: {}, input_types: {}, cache_cross_input_hits: 0 },
+    updated_at: nowIso(),
+  });
+}
+
+export async function recordCommandEngineResolutionSource({
+  tenantId,
+  source,
+  inputType = null,
+  cacheCrossInput = false,
+}) {
+  if (!tenantId || !source) return;
+
+  const key = metricsKey(tenantId);
+  const cached = await getSimpleCache(key);
+  const prev = cached?.value || {
+    totals: {
+      requests: 0,
+      success: 0,
+      failed: 0,
+      cache_hits: 0,
+    },
+    layers: {},
+    resolution: { total: 0, sources: {}, input_types: {}, cache_cross_input_hits: 0 },
+    updated_at: nowIso(),
+  };
+
+  const previousResolution = prev?.resolution || { total: 0, sources: {}, input_types: {}, cache_cross_input_hits: 0 };
+  const nextResolution = {
+    total: Number(previousResolution?.total || 0) + 1,
+    sources: incrementBucket(previousResolution?.sources, source),
+    input_types: inputType ? incrementBucket(previousResolution?.input_types, inputType) : normalizeBucketMap(previousResolution?.input_types),
+    cache_cross_input_hits: Number(previousResolution?.cache_cross_input_hits || 0) + (cacheCrossInput ? 1 : 0),
+  };
+
+  await saveSimpleCache(key, {
+    totals: prev?.totals || { requests: 0, success: 0, failed: 0, cache_hits: 0 },
+    layers: prev?.layers || {},
+    resolution: nextResolution,
     updated_at: nowIso(),
   });
 }
@@ -104,6 +164,12 @@ export async function getCommandEngineMetrics(tenantId) {
       data: {
         totals: { requests: 0, success: 0, failed: 0, cache_hits: 0, hit_rate: 0 },
         layers: {},
+        resolution: {
+          total: 0,
+          sources: {},
+          input_types: {},
+          cache_cross_input_hits: 0,
+        },
         updated_at: null,
       },
     };
@@ -112,6 +178,29 @@ export async function getCommandEngineMetrics(tenantId) {
   const requests = Number(raw?.totals?.requests || 0);
   const cacheHits = Number(raw?.totals?.cache_hits || 0);
   const layers = {};
+  const resolutionRaw = raw?.resolution || {};
+  const sourceCounts = normalizeBucketMap(resolutionRaw?.sources);
+  const inputTypeCounts = normalizeBucketMap(resolutionRaw?.input_types);
+  const resolutionTotalFromBuckets = Object.values(sourceCounts).reduce((sum, value) => sum + Number(value || 0), 0);
+  const resolutionTotal = Math.max(
+    Number(resolutionRaw?.total || 0),
+    Number(resolutionTotalFromBuckets || 0),
+  );
+  const resolutionSources = {};
+  Object.entries(sourceCounts).forEach(([source, count]) => {
+    resolutionSources[source] = {
+      count,
+      share: resolutionTotal > 0 ? Number((Number(count) / resolutionTotal).toFixed(4)) : 0,
+    };
+  });
+
+  const resolutionInputTypes = {};
+  Object.entries(inputTypeCounts).forEach(([inputType, count]) => {
+    resolutionInputTypes[inputType] = {
+      count,
+      share: resolutionTotal > 0 ? Number((Number(count) / resolutionTotal).toFixed(4)) : 0,
+    };
+  });
 
   Object.entries(raw?.layers || {}).forEach(([layer, stats]) => {
     const count = Number(stats?.count || 0);
@@ -141,6 +230,12 @@ export async function getCommandEngineMetrics(tenantId) {
         hit_rate: requests > 0 ? Number((cacheHits / requests).toFixed(4)) : 0,
       },
       layers,
+      resolution: {
+        total: resolutionTotal,
+        sources: resolutionSources,
+        input_types: resolutionInputTypes,
+        cache_cross_input_hits: Number(resolutionRaw?.cache_cross_input_hits || 0),
+      },
       updated_at: raw?.updated_at || null,
     },
   };

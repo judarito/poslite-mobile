@@ -98,6 +98,22 @@ import PricingRulesScreen from './src/screens/PricingRulesScreen';
 import UsersScreen from './src/screens/UsersScreen';
 import RolesMenusScreen from './src/screens/RolesMenusScreen';
 
+function isJwtSessionError(error) {
+  if (!error) return false;
+
+  const status = Number(error?.status || error?.statusCode || 0);
+  if (status === 401 || status === 403) return true;
+
+  const message = String(error?.message || error?.error_description || error?.code || '').toLowerCase();
+  return (
+    message.includes('jwt') ||
+    message.includes('token') ||
+    message.includes('session') ||
+    message.includes('expired') ||
+    message.includes('refresh')
+  );
+}
+
 export default function App() {
   const androidTopInset = Platform.OS === 'android' ? RNStatusBar.currentHeight || 0 : 0;
 
@@ -173,6 +189,29 @@ export default function App() {
     });
   }, []);
 
+  const forceSessionToLogin = useCallback((reason = 'Tu sesion expiro. Inicia sesion nuevamente.') => {
+    setError(reason);
+    setOfflineMode(false);
+    setSession(null);
+    setUserProfile(null);
+    setTenant(null);
+    setKpis(null);
+    setDailySeries([]);
+    setTopProducts([]);
+    setPaymentMethodsSeries([]);
+    setTenantSettings({});
+    setMenuTree([]);
+    setMenuCachedAt('');
+    setExpandedSections({});
+    setMenuOpen(false);
+    setLastMenuAction('');
+    setNotificationsOpen(false);
+    setNotifications([]);
+    setUnreadNotifications(0);
+    resetToHome();
+    setReportsInitialTab('sales');
+  }, [resetToHome]);
+
   const applyThemeFromLocalCache = async (cachedAuth = null) => {
     const cached = cachedAuth || (await getAuthCache());
     const tenantId = cached?.tenant?.tenant_id || null;
@@ -240,19 +279,8 @@ export default function App() {
           return;
         }
 
-        if (cached) {
-          setUserProfile(cached.userProfile);
-          setTenant(cached.tenant);
-          await loadTenantConfig(cached?.tenant?.tenant_id, {
-            forceOffline: true,
-            userId: cached?.userProfile?.user_id,
-          });
-          setOfflineMode(true);
-          if (cachedMenu?.menuTree) {
-            setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
-            setMenuCachedAt(cachedMenu.cachedAt);
-          }
-        }
+        // No forzar modo offline automaticamente cuando no hay sesion activa.
+        // El usuario puede elegir "Continuar sin conexion" desde Login si desea.
       } catch (e) {
         if (!mounted) return;
         setError(e?.message ?? 'Error inicializando modo offline.');
@@ -263,24 +291,13 @@ export default function App() {
 
     bootstrap();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       setSession(nextSession);
       if (!nextSession) {
-        setUserProfile(null);
-        setTenant(null);
-        setKpis(null);
-        setDailySeries([]);
-        setTopProducts([]);
-        setPaymentMethodsSeries([]);
-        setTenantSettings({});
-        setCurrentScreen('Home');
-        setScreenHistory([]);
-        setReportsInitialTab('sales');
-        setOfflineMode(false);
-        setMenuTree([]);
-        setMenuCachedAt('');
-        setExpandedSections({});
-        setMenuOpen(false);
+        const reason = event === 'TOKEN_REFRESH_FAILED'
+          ? 'Tu sesion expiro. Inicia sesion nuevamente.'
+          : 'Sesion finalizada. Inicia sesion nuevamente.';
+        forceSessionToLogin(reason);
         await applyThemeFromLocalCache();
       }
     });
@@ -289,7 +306,7 @@ export default function App() {
       mounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [forceSessionToLogin]);
 
   useEffect(() => {
     if (!session || offlineMode || !tenant?.tenant_id || !userProfile?.user_id) return undefined;
@@ -381,6 +398,76 @@ export default function App() {
     const shouldBeOffline = !networkReachable;
     setOfflineMode(shouldBeOffline);
   }, [session, networkReachable]);
+
+  useEffect(() => {
+    if (!session || offlineMode) return undefined;
+
+    let active = true;
+    let intervalId = null;
+    let expiryTimer = null;
+
+    const validateSession = async () => {
+      if (!active) return;
+
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (!active) return;
+
+        if (sessionError && isJwtSessionError(sessionError)) {
+          forceSessionToLogin('Tu sesion expiro. Inicia sesion nuevamente.');
+          return;
+        }
+
+        const activeSession = sessionData?.session || null;
+        if (!activeSession) {
+          forceSessionToLogin('Tu sesion expiro. Inicia sesion nuevamente.');
+          return;
+        }
+
+        const expiresAtSec = Number(activeSession?.expires_at || 0);
+        if (Number.isFinite(expiresAtSec) && expiresAtSec > 0) {
+          const expiresAtMs = expiresAtSec * 1000;
+          if (expiresAtMs <= Date.now()) {
+            forceSessionToLogin('Tu sesion expiro. Inicia sesion nuevamente.');
+            return;
+          }
+        }
+
+        const { error: userError } = await supabase.auth.getUser();
+        if (!active) return;
+        if (userError && isJwtSessionError(userError)) {
+          forceSessionToLogin('Tu sesion expiro. Inicia sesion nuevamente.');
+        }
+      } catch (_e) {
+        // Validacion best-effort para expiracion JWT.
+      }
+    };
+
+    validateSession();
+    intervalId = setInterval(validateSession, 60000);
+
+    const expiresAtSec = Number(session?.expires_at || 0);
+    if (Number.isFinite(expiresAtSec) && expiresAtSec > 0) {
+      const msUntilExpiry = expiresAtSec * 1000 - Date.now();
+      expiryTimer = setTimeout(
+        validateSession,
+        Math.max(1000, msUntilExpiry + 1500),
+      );
+    }
+
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        validateSession();
+      }
+    });
+
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+      if (expiryTimer) clearTimeout(expiryTimer);
+      appStateSub.remove();
+    };
+  }, [session?.user?.id, session?.expires_at, offlineMode, forceSessionToLogin]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
@@ -735,7 +822,7 @@ export default function App() {
 
       const profile = profiles?.[0] ?? null;
       if (!profile) {
-        throw new Error('No se encontro perfil del usuario en POSLite.');
+        throw new Error('No se encontro perfil del usuario en OfirOne.');
       }
       if (!profile.is_active) {
         throw new Error('Tu usuario esta inactivo.');

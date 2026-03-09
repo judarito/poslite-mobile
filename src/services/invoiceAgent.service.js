@@ -160,14 +160,23 @@ function findBestVariantMatch(line, catalog) {
 
   let candidates = Array.isArray(catalog) ? [...catalog] : [];
   if (lineSizes.size > 0) {
-    const withOverlappingSize = candidates.filter((candidate) => {
+    const sizedCandidates = candidates.filter((candidate) => {
       const candidateText = `${candidate?.product?.name || ''} ${candidate?.variant_name || ''} ${candidate?.sku || ''}`;
       const candidateSizes = extractSizeTokens(candidateText);
-      if (candidateSizes.size === 0) return false;
+      return candidateSizes.size > 0;
+    });
+    const withOverlappingSize = sizedCandidates.filter((candidate) => {
+      const candidateText = `${candidate?.product?.name || ''} ${candidate?.variant_name || ''} ${candidate?.sku || ''}`;
+      const candidateSizes = extractSizeTokens(candidateText);
       return Array.from(lineSizes).some((size) => candidateSizes.has(size));
     });
 
-    // Si el texto trae talla y hay variantes con esa talla, evita cruzar con otras tallas.
+    // Si hay variantes con talla pero ninguna coincide con la talla pedida, no fuerces match.
+    if (sizedCandidates.length > 0 && withOverlappingSize.length === 0) {
+      return null;
+    }
+
+    // Si existe solape de talla, limita candidatos solo a esas variantes.
     if (withOverlappingSize.length > 0) {
       candidates = withOverlappingSize;
     }
@@ -388,9 +397,13 @@ Reglas:
   };
 }
 
-export function matchInvoiceLinesToCatalog(lineItems, catalog) {
+export function matchInvoiceLinesToCatalog(lineItems, catalog, options = {}) {
   const lines = Array.isArray(lineItems) ? lineItems : [];
   const list = Array.isArray(catalog) ? catalog : [];
+  const configuredMinTokenConfidence = Number(options?.minTokenConfidence);
+  const minTokenConfidence = Number.isFinite(configuredMinTokenConfidence)
+    ? Math.max(0, Math.min(1, configuredMinTokenConfidence))
+    : 0.42;
 
   const matched = [];
   const unmatched = [];
@@ -398,6 +411,13 @@ export function matchInvoiceLinesToCatalog(lineItems, catalog) {
   for (const line of lines) {
     const best = findBestVariantMatch(line, list);
     if (best?.variant) {
+      const isWeakTokenMatch =
+        best.matchReason === 'name_tokens' &&
+        Number(best.confidence || 0) < minTokenConfidence;
+      if (isWeakTokenMatch) {
+        unmatched.push(line);
+        continue;
+      }
       matched.push({
         line,
         variant: best.variant,

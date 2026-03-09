@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemeMode } from '../lib/themeMode';
 import { getAboutSummary } from '../services/setup.service';
 
@@ -29,8 +29,13 @@ export default function AboutScreen({ tenant, userProfile, offlineMode }) {
 
   return (
     <ScrollView contentContainerStyle={[styles.container, isLightTheme && styles.containerLight]}>
-      <Text style={[styles.title, isLightTheme && styles.titleLight]}>Acerca de POSLite</Text>
-      <Text style={[styles.subtitle, isLightTheme && styles.subtitleLight]}>Sistema de Punto de Venta</Text>
+      <View style={styles.brandHeader}>
+        <Image source={require('../../assets/logo-about.png')} style={styles.brandLogo} resizeMode="contain" />
+        <View style={styles.brandTextWrap}>
+          <Text style={[styles.title, isLightTheme && styles.titleLight]}>Acerca de OfirOne</Text>
+          <Text style={[styles.subtitle, isLightTheme && styles.subtitleLight]}>Sistema de Punto de Venta</Text>
+        </View>
+      </View>
 
       <View style={[styles.card, isLightTheme && styles.cardLight]}>
         <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Sistema</Text>
@@ -70,9 +75,22 @@ export default function AboutScreen({ tenant, userProfile, offlineMode }) {
 const styles = StyleSheet.create({
   container: { backgroundColor: '#0b0f14', padding: 12 },
   containerLight: { backgroundColor: '#f8fafc' },
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  brandLogo: {
+    width: 56,
+    height: 56,
+    marginRight: 10,
+  },
+  brandTextWrap: {
+    flex: 1,
+  },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 22 },
   titleLight: { color: '#0f172a' },
-  subtitle: { color: '#94a3b8', marginTop: 2, marginBottom: 8 },
+  subtitle: { color: '#94a3b8', marginTop: 2 },
   subtitleLight: { color: '#475569' },
   card: {
     borderWidth: 1,

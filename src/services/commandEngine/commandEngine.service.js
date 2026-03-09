@@ -2,7 +2,7 @@ import { analyzeChatOrderText } from '../chatOrderAgent.service';
 import { getUnifiedCommandCache, saveUnifiedCommandCache } from './localCache.service';
 import { parseSaleCommandWithLocalLlm } from './localLlm.service';
 import { parseDeterministicSaleCommand } from './deterministicParser.service';
-import { recordCommandEngineMetric } from './metrics.service';
+import { recordCommandEngineMetric, recordCommandEngineResolutionSource } from './metrics.service';
 import { hashNormalizedText, normalizeCommandText } from './normalize.service';
 
 function buildEngineMeta({
@@ -14,6 +14,7 @@ function buildEngineMeta({
   upstreamCacheHit = false,
   originalSource = null,
   model = null,
+  cacheInputType = null,
 }) {
   return {
     source,
@@ -24,6 +25,7 @@ function buildEngineMeta({
     text_hash: textHash,
     fallback_chain: fallbackChain,
     model,
+    cache_input_type: cacheInputType,
   };
 }
 
@@ -63,12 +65,31 @@ async function recordLayerMetric({
   });
 }
 
+async function recordResolutionMetric({
+  tenantId,
+  source,
+  inputType,
+  cacheCrossInput = false,
+}) {
+  await recordCommandEngineResolutionSource({
+    tenantId,
+    source,
+    inputType,
+    cacheCrossInput,
+  });
+}
+
 export async function resolveSaleCommandFromText({
   tenantId,
   inputText,
   inputType = 'text',
+  cacheInputType = null,
   offlineMode = false,
   catalogFingerprint = 'global',
+  skipCache = false,
+  skipDeterministic = false,
+  skipLocalLlm = false,
+  forceCloud = false,
 }) {
   if (!tenantId) {
     return { success: false, error: 'tenantId es requerido para Command Engine.' };
@@ -83,128 +104,158 @@ export async function resolveSaleCommandFromText({
   const normalizedText = normalizeCommandText(text);
   const textHash = hashNormalizedText(normalizedText);
   const fallbackChain = [];
+  const shouldSkipCache = Boolean(skipCache || forceCloud);
+  const shouldSkipDeterministic = Boolean(skipDeterministic || forceCloud);
+  const shouldSkipLocalLlm = Boolean(skipLocalLlm || forceCloud);
+  const effectiveCacheInputType = String(cacheInputType || inputType || 'text').trim() || 'text';
 
   const cacheParams = {
     tenantId,
-    inputType,
+    inputType: effectiveCacheInputType,
     catalogFingerprint,
     textHash,
   };
 
-  fallbackChain.push('cache_lookup');
-  const cached = await getUnifiedCommandCache(cacheParams);
-  if (cached?.data?.line_items?.length) {
-    const originalSource = cached?.data?.engine?.source || null;
-    const result = withEngine(
-      {
-        ...cached.data,
-        cache_hit: true,
-      },
-      buildEngineMeta({
-        source: 'local_cache',
-        originalSource,
-        inputType,
-        textHash,
-        fallbackChain,
+  if (!shouldSkipCache) {
+    fallbackChain.push('cache_lookup');
+    const cached = await getUnifiedCommandCache(cacheParams);
+    if (cached?.data?.line_items?.length) {
+      const originalSource = cached?.data?.engine?.source || null;
+      const result = withEngine(
+        {
+          ...cached.data,
+          cache_hit: true,
+        },
+        buildEngineMeta({
+          source: 'local_cache',
+          originalSource,
+          inputType,
+          textHash,
+          fallbackChain,
+          cacheHit: true,
+          upstreamCacheHit: Boolean(cached?.data?.engine?.upstream_cache_hit),
+          model: cached?.data?.model || null,
+          cacheInputType: effectiveCacheInputType,
+        }),
+      );
+      await recordLayerMetric({
+        tenantId,
+        layer: 'local_cache',
+        success: true,
         cacheHit: true,
-        upstreamCacheHit: Boolean(cached?.data?.engine?.upstream_cache_hit),
-        model: cached?.data?.model || null,
-      }),
-    );
+        startedAtMs,
+      });
+      await recordResolutionMetric({
+        tenantId,
+        source: 'local_cache',
+        inputType,
+        cacheCrossInput: effectiveCacheInputType !== inputType,
+      });
+      return {
+        success: true,
+        data: result,
+      };
+    }
     await recordLayerMetric({
       tenantId,
       layer: 'local_cache',
-      success: true,
-      cacheHit: true,
+      success: false,
+      cacheHit: false,
       startedAtMs,
     });
-    return {
-      success: true,
-      data: result,
-    };
   }
-  await recordLayerMetric({
-    tenantId,
-    layer: 'local_cache',
-    success: false,
-    cacheHit: false,
-    startedAtMs,
-  });
 
-  fallbackChain.push('deterministic_parser');
-  const deterministic = parseDeterministicSaleCommand(text);
-  if (deterministic.success && deterministic?.data?.line_items?.length) {
-    const result = withEngine(
-      {
-        ...deterministic.data,
-        cache_hit: false,
-      },
-      buildEngineMeta({
+  if (!shouldSkipDeterministic) {
+    fallbackChain.push('deterministic_parser');
+    const deterministic = parseDeterministicSaleCommand(text);
+    if (deterministic.success && deterministic?.data?.line_items?.length) {
+      const result = withEngine(
+        {
+          ...deterministic.data,
+          cache_hit: false,
+        },
+        buildEngineMeta({
+          source: 'deterministic_parser',
+          inputType,
+          textHash,
+          fallbackChain,
+          model: deterministic?.data?.model || null,
+          cacheInputType: effectiveCacheInputType,
+        }),
+      );
+
+      await saveUnifiedCommandCache(cacheParams, result);
+      await recordLayerMetric({
+        tenantId,
+        layer: 'deterministic_parser',
+        success: true,
+        cacheHit: false,
+        startedAtMs,
+      });
+      await recordResolutionMetric({
+        tenantId,
         source: 'deterministic_parser',
         inputType,
-        textHash,
-        fallbackChain,
-        model: deterministic?.data?.model || null,
-      }),
-    );
-
-    await saveUnifiedCommandCache(cacheParams, result);
+      });
+      return { success: true, data: result };
+    }
     await recordLayerMetric({
       tenantId,
       layer: 'deterministic_parser',
-      success: true,
+      success: false,
       cacheHit: false,
       startedAtMs,
     });
-    return { success: true, data: result };
   }
-  await recordLayerMetric({
-    tenantId,
-    layer: 'deterministic_parser',
-    success: false,
-    cacheHit: false,
-    startedAtMs,
-  });
 
-  fallbackChain.push('local_llm');
-  const localLlm = await parseSaleCommandWithLocalLlm({
-    tenantId,
-    text,
-    inputType,
-  });
+  let localLlm = { success: false, skipped: true, reason: 'local_llm skipped' };
+  if (!shouldSkipLocalLlm) {
+    fallbackChain.push('local_llm');
+    localLlm = await parseSaleCommandWithLocalLlm({
+      tenantId,
+      text,
+      inputType,
+    });
 
-  if (localLlm.success && localLlm?.data?.line_items?.length) {
-    const result = withEngine(
-      {
-        ...localLlm.data,
-        cache_hit: false,
-      },
-      buildEngineMeta({
+    if (localLlm.success && localLlm?.data?.line_items?.length) {
+      const result = withEngine(
+        {
+          ...localLlm.data,
+          cache_hit: false,
+        },
+        buildEngineMeta({
+          source: 'local_llm',
+          inputType,
+          textHash,
+          fallbackChain,
+          model: localLlm?.data?.model || 'local-llm',
+          cacheInputType: effectiveCacheInputType,
+        }),
+      );
+
+      await saveUnifiedCommandCache(cacheParams, result);
+      await recordLayerMetric({
+        tenantId,
+        layer: 'local_llm',
+        success: true,
+        cacheHit: false,
+        startedAtMs,
+      });
+      await recordResolutionMetric({
+        tenantId,
         source: 'local_llm',
         inputType,
-        textHash,
-        fallbackChain,
-        model: localLlm?.data?.model || 'local-llm',
-      }),
-    );
-
-    await saveUnifiedCommandCache(cacheParams, result);
+      });
+      return { success: true, data: result };
+    }
     await recordLayerMetric({
       tenantId,
       layer: 'local_llm',
-      success: true,
+      success: false,
       cacheHit: false,
       startedAtMs,
     });
-    return { success: true, data: result };
   }
-  await recordLayerMetric({
-    tenantId,
-    layer: 'local_llm',
-    success: false,
-    cacheHit: false,
-    startedAtMs,
-  });
 
   if (offlineMode) {
     const localHint = localLlm.reason
@@ -252,6 +303,7 @@ export async function resolveSaleCommandFromText({
       fallbackChain,
       upstreamCacheHit: Boolean(cloud?.data?.cache_hit),
       model: cloud?.data?.model || null,
+      cacheInputType: effectiveCacheInputType,
     }),
   );
 
@@ -262,6 +314,11 @@ export async function resolveSaleCommandFromText({
     success: true,
     cacheHit: Boolean(cloud?.data?.cache_hit),
     startedAtMs,
+  });
+  await recordResolutionMetric({
+    tenantId,
+    source: 'cloud_llm',
+    inputType,
   });
 
   return {

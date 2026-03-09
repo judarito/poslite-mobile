@@ -97,7 +97,7 @@ function buildSaleTicketText(sale, currencyFormatter) {
   });
 
   return [
-    `POSLite · Venta ${sale?.sale_number || '-'}`,
+    `OfirOne · Venta ${sale?.sale_number || '-'}`,
     `Fecha: ${sale?.sold_at ? new Date(sale.sold_at).toLocaleString() : '-'}`,
     `Cliente: ${sale?.customer?.full_name || 'Consumidor final'}`,
     `Documento: ${sale?.invoice_type || 'FV'}`,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -29,9 +29,12 @@ import { analyzeInvoiceWithImage, matchInvoiceLinesToCatalog } from '../services
 import {
   cancelVoskTranscription,
   ensureEmbeddedModelReady,
+  extractTextWithNativeOcr,
   getEmbeddedLlmStatus,
   getEmbeddedModelStatus,
   getCommandEngineMetrics,
+  getNativeOcrStatus,
+  getVoskSttStatus,
   isVoskSttAvailable,
   resolveSaleCommandFromText,
   transcribeWithVosk,
@@ -69,6 +72,65 @@ function isLikelyScannerInput(value) {
   if (text.length < 4) return false;
   if (text.includes(' ')) return false;
   return /^[a-z0-9._-]+$/i.test(text);
+}
+
+function getBaseEngineSourceLabel(source) {
+  const normalized = String(source || '').trim();
+  if (normalized === 'local_cache') return 'cache local';
+  if (normalized === 'deterministic_parser') return 'parser local';
+  if (normalized === 'local_llm') return 'llm local';
+  if (normalized === 'cloud_llm') return 'llm cloud';
+  return normalized || 'engine';
+}
+
+function resolveEngineSummary(engine) {
+  const source = String(engine?.source || '').trim() || 'engine';
+  const originalSource = String(engine?.original_source || '').trim() || null;
+  const inputType = String(engine?.input_type || '').trim() || null;
+  const cacheInputType = String(engine?.cache_input_type || '').trim() || null;
+  const fallbackChain = Array.isArray(engine?.fallback_chain) ? engine.fallback_chain : [];
+  const cacheHit = source === 'local_cache' || Boolean(engine?.cache_hit);
+  const cacheCrossInput = Boolean(
+    source === 'local_cache' &&
+    cacheHit &&
+    cacheInputType &&
+    inputType &&
+    cacheInputType !== inputType,
+  );
+  const primarySource = source === 'local_cache' && originalSource ? originalSource : source;
+  const sourceLabel = source === 'local_cache' && originalSource
+    ? `${getBaseEngineSourceLabel(source)} (${getBaseEngineSourceLabel(originalSource)})`
+    : getBaseEngineSourceLabel(source);
+  const showConfidence = primarySource === 'local_llm' || primarySource === 'cloud_llm';
+
+  return {
+    source,
+    originalSource,
+    primarySource,
+    sourceLabel,
+    fallbackChain,
+    cacheHit,
+    cacheCrossInput,
+    inputType,
+    cacheInputType,
+    showConfidence,
+  };
+}
+
+function getInputTypeLabel(inputType) {
+  const normalized = String(inputType || '').trim().toLowerCase();
+  if (normalized === 'voice') return 'voz';
+  if (normalized === 'text') return 'texto';
+  if (normalized === 'image') return 'imagen';
+  return normalized || 'comando';
+}
+
+function getResolutionSourceUsage(metrics, source) {
+  const stats = metrics?.resolution?.sources?.[source] || null;
+  return {
+    count: Number(stats?.count || 0),
+    sharePct: Math.round(Number(stats?.share || 0) * 100),
+  };
 }
 
 function estimateBase64Bytes(base64) {
@@ -120,6 +182,57 @@ async function buildOptimizedImageForOcr(asset) {
     success: false,
     error: 'No se pudo reducir la foto por debajo de 1MB para OCR. Acerca mas la camara y evita fondo extra.',
   };
+}
+
+async function buildEnhancedImageForNativeOcr(asset) {
+  if (!asset?.uri) {
+    return { success: false, error: 'No se pudo obtener URI de imagen para OCR nativo.' };
+  }
+
+  let ImageManipulator;
+  try {
+    ImageManipulator = require('expo-image-manipulator');
+  } catch (_e) {
+    return {
+      success: false,
+      error: 'Falta expo-image-manipulator para mejorar OCR nativo.',
+    };
+  }
+
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      asset.uri,
+      [{ resize: { width: 2000 } }],
+      {
+        compress: 1,
+        format: ImageManipulator.SaveFormat.JPEG,
+        base64: false,
+      },
+    );
+    return { success: true, data: { uri: result?.uri || asset.uri } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || 'No se pudo mejorar la imagen para OCR nativo.',
+    };
+  }
+}
+
+function scoreOcrTextForInvoice(text) {
+  const normalized = String(text || '').replace(/\r/g, '\n');
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return 0;
+
+  const usefulLines = lines.filter((line) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ]{3,}/.test(line)).length;
+  const itemSignals = lines.filter((line) => /\b(cant|cantidad|descripcion|descripción|talla)\b/i.test(line)).length;
+  const qtySignals = lines.filter((line) => /^\d+\s+/.test(line)).length;
+  const longWords = lines.filter((line) => /\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{5,}\b/.test(line)).length;
+  const charScore = Math.min(2000, normalized.length) * 0.005;
+
+  return usefulLines + itemSignals * 2 + qtySignals * 2 + longWords * 0.8 + charScore;
 }
 
 function calculateDiscount(subtotal, discountValue, discountType) {
@@ -251,11 +364,18 @@ export default function PointOfSaleScreen({
   const [chatOrderSummary, setChatOrderSummary] = useState(null);
   const [processingVoiceOrder, setProcessingVoiceOrder] = useState(false);
   const [voicePreviewText, setVoicePreviewText] = useState('');
+  const [voiceAvailable, setVoiceAvailable] = useState(() => isVoskSttAvailable());
   const [commandEngineMetrics, setCommandEngineMetrics] = useState(null);
   const [embeddedLlmStatus, setEmbeddedLlmStatus] = useState(null);
   const [preparingEmbeddedLlm, setPreparingEmbeddedLlm] = useState(false);
   const [embeddedDownloadProgress, setEmbeddedDownloadProgress] = useState(0);
   const [showAiTools, setShowAiTools] = useState(false);
+  const [showAiLogs, setShowAiLogs] = useState(false);
+  const [showChatComposer, setShowChatComposer] = useState(false);
+  const [aiWorking, setAiWorking] = useState(false);
+  const [aiWorkingLabel, setAiWorkingLabel] = useState('');
+  const [floatingNotice, setFloatingNotice] = useState(null);
+  const floatingNoticeTimerRef = useRef(null);
 
   const currency = tenant?.currency_code || 'COP';
   const roundingMethod = tenantSettings?.rounding_method || 'normal';
@@ -324,11 +444,31 @@ export default function PointOfSaleScreen({
   );
 
   const effectiveThirdPartyId = selectedCustomer?.customer_id || null;
-  const voiceAvailable = useMemo(() => isVoskSttAvailable(), []);
   const localLlmMode = useMemo(
     () => String(process.env.EXPO_PUBLIC_LOCAL_LLM_MODE || 'auto').trim().toLowerCase(),
     [],
   );
+
+  const showFloatingNotice = (text, type = 'info', ttlMs = 3800) => {
+    const content = String(text || '').trim();
+    if (!content) return;
+
+    if (floatingNoticeTimerRef.current) {
+      clearTimeout(floatingNoticeTimerRef.current);
+      floatingNoticeTimerRef.current = null;
+    }
+
+    setFloatingNotice({
+      id: Date.now(),
+      type,
+      text: content,
+    });
+
+    floatingNoticeTimerRef.current = setTimeout(() => {
+      setFloatingNotice(null);
+      floatingNoticeTimerRef.current = null;
+    }, Math.max(1200, Number(ttlMs || 0)));
+  };
 
   useEffect(() => {
     let active = true;
@@ -482,6 +622,29 @@ export default function PointOfSaleScreen({
     refreshEmbeddedLlmStatus();
   }, []);
 
+  useEffect(() => {
+    setVoiceAvailable(isVoskSttAvailable());
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (floatingNoticeTimerRef.current) {
+        clearTimeout(floatingNoticeTimerRef.current);
+        floatingNoticeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    showFloatingNotice(error, 'error', 4600);
+  }, [error]);
+
+  useEffect(() => {
+    if (!message) return;
+    showFloatingNotice(message, 'info', 2800);
+  }, [message]);
+
   const upsertSinglePaymentIfNeeded = (nextTotal) => {
     const rounded = applyRounding(nextTotal);
     setPayments((prev) => {
@@ -601,13 +764,20 @@ export default function PointOfSaleScreen({
     setError('');
     setMessage('');
     setInvoiceScanSummary(null);
+    setChatOrderSummary(null);
 
-    if (offlineMode) {
-      setError('Escaneo de factura requiere conexion online.');
-      return;
-    }
     if (!tenant?.tenant_id) {
       setError('Tenant invalido para escaneo.');
+      return;
+    }
+    const ocrStatus = await getNativeOcrStatus();
+    const nativeOcrAvailable = Boolean(ocrStatus?.available);
+    const cloudPreferred = !offlineMode;
+    if (!cloudPreferred && !nativeOcrAvailable) {
+      setError('OCR nativo no disponible en modo offline. Instala expo-text-extractor y recompila la app.');
+      return;
+    }
+    if (!(await ensureAiModelReady('escaneo de factura'))) {
       return;
     }
 
@@ -628,7 +798,7 @@ export default function PointOfSaleScreen({
     const pickerOptions = {
       mediaTypes: ImagePicker.MediaTypeOptions?.Images ?? 'images',
       allowsEditing: false,
-      quality: 0.6,
+      quality: 1,
       base64: false,
       exif: false,
     };
@@ -647,88 +817,94 @@ export default function PointOfSaleScreen({
 
     setProcessingInvoice(true);
     try {
-      const imageResult = await buildOptimizedImageForOcr(asset);
-      if (!imageResult.success) {
-        setError(imageResult.error || 'No fue posible optimizar la imagen para OCR.');
-        return;
-      }
+      setAiWorking(true);
+      let ocrText = '';
+      let ocrEngine = '';
+      let ocrFailureReason = '';
 
-      const locationId = currentSession?.cash_register?.location_id || null;
-      const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
-      if (!catalogResult.success || !catalogResult.data?.length) {
-        setError(catalogResult.error || 'No hay catalogo disponible para matching.');
-        return;
-      }
-
-      const aiResult = await analyzeInvoiceWithImage({
-        tenantId: tenant.tenant_id,
-        imageBase64: imageResult.data.base64,
-        mimeType: imageResult.data.mimeType || 'image/jpeg',
-      });
-      if (!aiResult.success) {
-        setError(aiResult.error || 'No fue posible analizar la factura.');
-        return;
-      }
-
-      const { matched, unmatched } = matchInvoiceLinesToCatalog(
-        aiResult.data.line_items,
-        catalogResult.data,
-      );
-
-      const vendorName = String(aiResult?.data?.invoice?.vendor_name || '').trim();
-      let customerSuggestion = null;
-      let customerAutoloaded = false;
-      if (vendorName.length >= 2) {
-        const customerLookup = offlineMode
-          ? await searchCustomersOffline(tenant.tenant_id, vendorName, 20)
-          : await searchCustomers(tenant.tenant_id, vendorName, 20);
-        const customerList = customerLookup.success ? customerLookup.data || [] : [];
-        const bestCustomer = findBestCustomerMatch(vendorName, customerList);
-        if (bestCustomer?.customer) {
-          customerSuggestion = bestCustomer.customer;
-          if (!selectedCustomer?.customer_id) {
-            setSelectedCustomer(bestCustomer.customer);
-            setSearchCustomer(bestCustomer.customer.full_name || '');
-            setCustomers([]);
-            customerAutoloaded = true;
+      if (cloudPreferred) {
+        setAiWorkingLabel('Leyendo texto de imagen (OCR cloud)...');
+        const imageResult = await buildOptimizedImageForOcr(asset);
+        if (!imageResult.success) {
+          ocrFailureReason = imageResult.error || 'No fue posible optimizar la imagen para OCR cloud.';
+          setError(ocrFailureReason);
+        } else {
+          const cloudOcrResult = await analyzeInvoiceWithImage({
+            tenantId: tenant.tenant_id,
+            imageBase64: imageResult.data.base64,
+            mimeType: imageResult.data.mimeType || 'image/jpeg',
+          });
+          if (!cloudOcrResult.success) {
+            ocrFailureReason = cloudOcrResult.error || 'Fallo OCR cloud.';
+            showFloatingNotice(`${ocrFailureReason} Intentando OCR nativo...`, 'error', 4200);
+          } else {
+            ocrText = String(cloudOcrResult?.data?.ocr_text || '').trim();
+            if (!ocrText) {
+              const synthesized = (cloudOcrResult?.data?.line_items || [])
+                .map((line) => `${Math.max(1, Number(line?.quantity || 1))} ${String(line?.raw_name || '').trim()}`)
+                .filter(Boolean)
+                .join('\n')
+                .trim();
+              ocrText = synthesized;
+            }
+            ocrEngine = 'cloud_ocr_edge';
           }
-        } else if (!selectedCustomer?.customer_id && customerList.length) {
-          setSearchCustomer(vendorName);
-          setCustomers(customerList.slice(0, 6));
         }
       }
 
-      if (!matched.length) {
-        setError('La IA leyó la factura pero no encontró coincidencias con tu catalogo.');
-        setInvoiceScanSummary({
-          matchedCount: 0,
-          unmatched,
-          invoice: aiResult.data.invoice || {},
-          customerSuggestion,
-          customerAutoloaded,
-        });
+      if (!ocrText && nativeOcrAvailable) {
+        setAiWorkingLabel('Leyendo texto de imagen (OCR nativo)...');
+        const enhancedResult = await buildEnhancedImageForNativeOcr(asset);
+        const candidateUris = [asset.uri];
+        if (enhancedResult?.success && enhancedResult?.data?.uri && enhancedResult.data.uri !== asset.uri) {
+          candidateUris.push(enhancedResult.data.uri);
+        }
+
+        let bestNative = null;
+        for (const uri of candidateUris) {
+          const passResult = await extractTextWithNativeOcr({ imageUri: uri });
+          if (!passResult?.success) continue;
+          const candidateText = String(passResult?.data?.text || '').trim();
+          if (!candidateText) continue;
+          const candidateScore = scoreOcrTextForInvoice(candidateText);
+          if (!bestNative || candidateScore > bestNative.score) {
+            bestNative = {
+              text: candidateText,
+              score: candidateScore,
+              engine: passResult?.data?.engine || 'native_ocr',
+            };
+          }
+        }
+
+        if (bestNative) {
+          ocrText = bestNative.text;
+          ocrEngine = bestNative.engine;
+        } else if (!cloudPreferred) {
+          ocrFailureReason = 'No fue posible extraer texto con OCR nativo.';
+          setError(ocrFailureReason);
+          return;
+        }
+      }
+
+      if (!ocrText) {
+        setError(ocrFailureReason || 'OCR no detecto texto util en la imagen.');
         return;
       }
-
-      for (const item of matched) {
-        await upsertVariantInCart({
-          variant: item.variant,
-          quantity: item.line.quantity || 1,
-          unitPrice: null,
-        });
-      }
+      setError('');
 
       setInvoiceScanSummary({
-        matchedCount: matched.length,
-        unmatched,
-        invoice: aiResult.data.invoice || {},
-        customerSuggestion,
-        customerAutoloaded,
+        ocrEngine: ocrEngine || null,
+        ocrChars: ocrText.length,
+        ocrLines: ocrText.split('\n').filter(Boolean).length,
+        ocrPreview: ocrText.slice(0, 180),
       });
-      setMessage(
-        `Factura procesada: ${matched.length} item(s) cargados al carrito${unmatched.length ? `, ${unmatched.length} sin match` : ''}.`,
-      );
+      await runCommandToCart({
+        commandText: ocrText,
+        inputType: 'image',
+      });
     } finally {
+      setAiWorking(false);
+      setAiWorkingLabel('');
       setProcessingInvoice(false);
     }
   };
@@ -753,11 +929,20 @@ export default function PointOfSaleScreen({
     });
   };
 
-  const handlePrepareEmbeddedLlm = async () => {
-    setError('');
-    setMessage('');
+  const ensureAiModelReady = async (triggerLabel = 'IA') => {
+    if (localLlmMode === 'endpoint') return true;
+    if (preparingEmbeddedLlm) {
+      setError('El modelo local se esta preparando. Espera a que termine la descarga.');
+      return false;
+    }
+
+    const status = await getEmbeddedModelStatus();
+    if (status?.success && status.available) return true;
+
     setPreparingEmbeddedLlm(true);
     setEmbeddedDownloadProgress(0);
+    setMessage(`Preparando modelo local para ${triggerLabel}...`);
+
     try {
       const result = await ensureEmbeddedModelReady({
         onProgress: ({ progress }) => {
@@ -767,17 +952,17 @@ export default function PointOfSaleScreen({
 
       if (!result.success) {
         setError(result.error || 'No fue posible preparar el modelo local.');
-        return;
+        return false;
       }
 
-      const modelMb = Number(
-        result.mb || (Number.isFinite(Number(result.bytes)) ? (Number(result.bytes) / (1024 * 1024)).toFixed(2) : 0),
-      );
-      setMessage(
-        result.downloaded
-          ? `Modelo local listo (${modelMb} MB).`
-          : 'Modelo local ya estaba disponible.',
-      );
+      if (result.downloaded) {
+        const modelMb = Number(
+          result.mb || (Number.isFinite(Number(result.bytes)) ? (Number(result.bytes) / (1024 * 1024)).toFixed(2) : 0),
+        );
+        setMessage(`Modelo local listo (${modelMb} MB).`);
+      }
+
+      return true;
     } finally {
       setPreparingEmbeddedLlm(false);
       await refreshEmbeddedLlmStatus();
@@ -795,110 +980,214 @@ export default function PointOfSaleScreen({
       return false;
     }
 
-    const locationId = currentSession?.cash_register?.location_id || null;
-    const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
-    if (!catalogResult.success || !catalogResult.data?.length) {
-      setError(catalogResult.error || 'No hay catalogo disponible para matching.');
-      return false;
-    }
+    setAiWorking(true);
+    setAiWorkingLabel(`Procesando comando de ${getInputTypeLabel(inputType)} (parser/cache local)...`);
 
-    const aiResult = await resolveSaleCommandFromText({
-      tenantId: tenant.tenant_id,
-      inputText: text,
-      inputType,
-      offlineMode,
-      catalogFingerprint: locationId || 'no-location',
-    });
-    if (!aiResult.success) {
-      setError(aiResult.error || 'No fue posible convertir el comando.');
-      await refreshEngineMetrics();
-      return false;
-    }
-
-    const { matched, unmatched } = matchInvoiceLinesToCatalog(
-      aiResult.data.line_items,
-      catalogResult.data,
-    );
-
-    const customerName = String(aiResult?.data?.order?.customer_name || '').trim();
-    let customerSuggestion = null;
-    let customerAutoloaded = false;
-    if (customerName.length >= 2) {
-      const customerLookup = offlineMode
-        ? await searchCustomersOffline(tenant.tenant_id, customerName, 20)
-        : await searchCustomers(tenant.tenant_id, customerName, 20);
-      const customerList = customerLookup.success ? customerLookup.data || [] : [];
-      const bestCustomer = findBestCustomerMatch(customerName, customerList);
-      if (bestCustomer?.customer) {
-        customerSuggestion = bestCustomer.customer;
-        if (!selectedCustomer?.customer_id) {
-          setSelectedCustomer(bestCustomer.customer);
-          setSearchCustomer(bestCustomer.customer.full_name || '');
-          setCustomers([]);
-          customerAutoloaded = true;
-        }
-      } else if (!selectedCustomer?.customer_id && customerList.length) {
-        setSearchCustomer(customerName);
-        setCustomers(customerList.slice(0, 6));
+    try {
+      const locationId = currentSession?.cash_register?.location_id || null;
+      const catalogResult = await listCatalogForInvoiceMatching(tenant.tenant_id, locationId, 3500);
+      if (!catalogResult.success || !catalogResult.data?.length) {
+        setError(catalogResult.error || 'No hay catalogo disponible para matching.');
+        return false;
       }
-    }
 
-    if (!matched.length) {
-      setError('El motor interpreto el comando pero no encontro coincidencias en catalogo.');
+      const commandResolveParams = {
+        tenantId: tenant.tenant_id,
+        inputText: text,
+        inputType,
+        cacheInputType: 'text',
+        offlineMode,
+        catalogFingerprint: locationId || 'no-location',
+      };
+      const matchingOptions = inputType === 'image'
+        ? { minTokenConfidence: 0.66 }
+        : {};
+      const isMatchQualityAcceptable = ({ matched = [], unmatched = [] }) => {
+        if (!Array.isArray(matched) || !matched.length) return false;
+        if (inputType !== 'image') return true;
+
+        const tokenMatches = matched.filter((item) => item?.matchReason === 'name_tokens');
+        const weakTokenMatches = tokenMatches.filter((item) => Number(item?.confidence || 0) < 0.72);
+        const totalLines = Number(matched.length) + Number(unmatched.length || 0);
+        const matchRatio = totalLines > 0 ? Number(matched.length) / totalLines : 0;
+        const tooManyUnmatched = Number(unmatched.length || 0) >= Number(matched.length || 0);
+        return weakTokenMatches.length === 0 && !tooManyUnmatched && matchRatio >= 0.5;
+      };
+
+      const resolveAndMatchCommand = async (overrides = {}) => {
+        const aiResult = await resolveSaleCommandFromText({
+          ...commandResolveParams,
+          ...overrides,
+        });
+        if (!aiResult.success) {
+          return {
+            success: false,
+            error: aiResult.error || 'No fue posible convertir el comando.',
+          };
+        }
+
+        const { matched, unmatched } = matchInvoiceLinesToCatalog(
+          aiResult.data.line_items,
+          catalogResult.data,
+          matchingOptions,
+        );
+        const engineSummary = resolveEngineSummary(aiResult?.data?.engine);
+        return {
+          success: true,
+          aiResult,
+          matched,
+          unmatched,
+          engineSummary,
+        };
+      };
+
+      let resolved = await resolveAndMatchCommand();
+      if (!resolved.success) {
+        setError(resolved.error || 'No fue posible convertir el comando.');
+        await refreshEngineMetrics();
+        return false;
+      }
+
+      let matchQualityAcceptable = isMatchQualityAcceptable(resolved);
+      let retryFailureDetail = '';
+      if (!offlineMode) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (matchQualityAcceptable) break;
+          if (resolved.engineSummary.primarySource === 'cloud_llm') break;
+
+          const retryOptions = {
+            skipCache: true,
+          };
+          const primarySource = resolved.engineSummary.primarySource;
+
+          if (primarySource === 'deterministic_parser' || primarySource === 'local_cache') {
+            retryOptions.skipDeterministic = true;
+            setAiWorkingLabel(
+              resolved.matched.length
+                ? 'Match incierto del parser/cache. Probando LLM local...'
+                : 'Sin match en parser/cache. Probando LLM local...',
+            );
+          }
+          if (primarySource === 'local_llm') {
+            retryOptions.skipDeterministic = true;
+            retryOptions.skipLocalLlm = true;
+            setAiWorkingLabel(
+              resolved.matched.length
+                ? 'Match incierto del LLM local. Consultando LLM cloud...'
+                : 'Sin match en LLM local. Consultando LLM cloud...',
+            );
+          }
+
+          const retryResolved = await resolveAndMatchCommand(retryOptions);
+          if (!retryResolved.success) {
+            retryFailureDetail = retryResolved.error || '';
+            break;
+          }
+          resolved = retryResolved;
+          matchQualityAcceptable = isMatchQualityAcceptable(resolved);
+        }
+      }
+
+      const aiResult = resolved.aiResult;
+      const { matched, unmatched } = resolved;
+      const engineSummary = resolved.engineSummary;
+      const finalQualityAcceptable = isMatchQualityAcceptable(resolved);
+      setAiWorkingLabel('Finalizando y aplicando resultado...');
+
+      const customerName = String(aiResult?.data?.order?.customer_name || '').trim();
+      let customerSuggestion = null;
+      let customerAutoloaded = false;
+      if (customerName.length >= 2) {
+        const customerLookup = offlineMode
+          ? await searchCustomersOffline(tenant.tenant_id, customerName, 20)
+          : await searchCustomers(tenant.tenant_id, customerName, 20);
+        const customerList = customerLookup.success ? customerLookup.data || [] : [];
+        const bestCustomer = findBestCustomerMatch(customerName, customerList);
+        if (bestCustomer?.customer) {
+          customerSuggestion = bestCustomer.customer;
+          if (!selectedCustomer?.customer_id) {
+            setSelectedCustomer(bestCustomer.customer);
+            setSearchCustomer(bestCustomer.customer.full_name || '');
+            setCustomers([]);
+            customerAutoloaded = true;
+          }
+        } else if (!selectedCustomer?.customer_id && customerList.length) {
+          setSearchCustomer(customerName);
+          setCustomers(customerList.slice(0, 6));
+        }
+      }
+
+      if (!matched.length || (inputType === 'image' && !finalQualityAcceptable)) {
+        const retryHint = retryFailureDetail
+          ? ` Fallback adicional no disponible: ${retryFailureDetail}`
+          : '';
+        const qualityHint = inputType === 'image' && matched.length && !finalQualityAcceptable
+          ? ' El OCR devolvio texto con baja confianza; evita cargar productos automaticamente.'
+          : '';
+        const noMatchMessage = `El motor interpreto el comando pero no encontro coincidencias en catalogo.${qualityHint}${retryHint}`;
+        setError(noMatchMessage);
+        showFloatingNotice(noMatchMessage, 'error', 5200);
+        setChatOrderSummary({
+          matchedCount: 0,
+          unmatched,
+          inputType: aiResult?.data?.engine?.input_type || inputType,
+          confidence: Number(aiResult?.data?.order?.confidence || 0),
+          showConfidence: engineSummary.showConfidence,
+          source: engineSummary.source,
+          originalSource: engineSummary.originalSource,
+          sourceLabel: engineSummary.sourceLabel,
+          fallbackChain: engineSummary.fallbackChain,
+          cacheCrossInput: engineSummary.cacheCrossInput,
+          customerSuggestion,
+          customerAutoloaded,
+          notes: aiResult?.data?.order?.notes || null,
+        });
+        await refreshEngineMetrics();
+        return false;
+      }
+
+      for (const item of matched) {
+        await upsertVariantInCart({
+          variant: item.variant,
+          quantity: item.line.quantity || 1,
+          unitPrice: null,
+        });
+      }
+
+      const aiNotes = String(aiResult?.data?.order?.notes || '').trim();
+      if (aiNotes) {
+        setSaleNote((prev) => {
+          const previous = String(prev || '').trim();
+          if (!previous) return aiNotes;
+          if (previous.includes(aiNotes)) return previous;
+          return `${previous}\n${aiNotes}`;
+        });
+      }
+
       setChatOrderSummary({
-        matchedCount: 0,
+        matchedCount: matched.length,
         unmatched,
+        inputType: aiResult?.data?.engine?.input_type || inputType,
         confidence: Number(aiResult?.data?.order?.confidence || 0),
+        showConfidence: engineSummary.showConfidence,
+        source: engineSummary.source,
+        originalSource: engineSummary.originalSource,
+        sourceLabel: engineSummary.sourceLabel,
+        fallbackChain: engineSummary.fallbackChain,
+        cacheCrossInput: engineSummary.cacheCrossInput,
         customerSuggestion,
         customerAutoloaded,
         notes: aiResult?.data?.order?.notes || null,
       });
+      setMessage(
+        `Comando convertido (${inputType}): ${matched.length} item(s)${unmatched.length ? `, ${unmatched.length} sin match` : ''}${engineSummary.cacheCrossInput ? ' (cache cross-input)' : engineSummary.cacheHit ? ' (cache)' : ''} · via ${engineSummary.sourceLabel}.`,
+      );
       await refreshEngineMetrics();
-      return false;
+      return true;
+    } finally {
+      setAiWorking(false);
+      setAiWorkingLabel('');
     }
-
-    for (const item of matched) {
-      await upsertVariantInCart({
-        variant: item.variant,
-        quantity: item.line.quantity || 1,
-        unitPrice: null,
-      });
-    }
-
-    const aiNotes = String(aiResult?.data?.order?.notes || '').trim();
-    if (aiNotes) {
-      setSaleNote((prev) => {
-        const previous = String(prev || '').trim();
-        if (!previous) return aiNotes;
-        if (previous.includes(aiNotes)) return previous;
-        return `${previous}\n${aiNotes}`;
-      });
-    }
-
-    setChatOrderSummary({
-      matchedCount: matched.length,
-      unmatched,
-      confidence: Number(aiResult?.data?.order?.confidence || 0),
-      customerSuggestion,
-      customerAutoloaded,
-      notes: aiResult?.data?.order?.notes || null,
-    });
-
-    const source = aiResult?.data?.engine?.source || 'engine';
-    const sourceLabel = source === 'local_cache'
-      ? 'cache local'
-      : source === 'deterministic_parser'
-        ? 'parser local'
-        : source === 'local_llm'
-          ? 'llm local'
-          : source === 'cloud_llm'
-            ? 'llm cloud'
-            : source;
-    setMessage(
-      `Comando convertido (${inputType}): ${matched.length} item(s)${unmatched.length ? `, ${unmatched.length} sin match` : ''}${aiResult?.data?.cache_hit ? ' (cache)' : ''} · via ${sourceLabel}.`,
-    );
-    await refreshEngineMetrics();
-    return true;
   };
 
   const parseChatOrderWithAgent = async () => {
@@ -912,6 +1201,9 @@ export default function PointOfSaleScreen({
     }
     if (!chatOrderText.trim()) {
       setError('Pega o escribe el pedido del chat.');
+      return;
+    }
+    if (!(await ensureAiModelReady('chat IA'))) {
       return;
     }
 
@@ -932,7 +1224,9 @@ export default function PointOfSaleScreen({
     setMessage('');
     setChatOrderSummary(null);
 
-    if (!voiceAvailable) {
+    const voskStatus = getVoskSttStatus();
+    setVoiceAvailable(Boolean(voskStatus?.available));
+    if (!voskStatus?.available) {
       setError('Vosk no esta disponible en este build. Requiere dev-client con modulo nativo.');
       return;
     }
@@ -942,12 +1236,15 @@ export default function PointOfSaleScreen({
       setProcessingVoiceOrder(false);
       return;
     }
+    if (!(await ensureAiModelReady('comando de voz'))) {
+      return;
+    }
 
     setProcessingVoiceOrder(true);
     setVoicePreviewText('');
     try {
       const voiceResult = await transcribeWithVosk({
-        timeoutMs: 7000,
+        timeoutMs: 12000,
         onPartialText: (partial) => setVoicePreviewText(String(partial || '')),
       });
 
@@ -969,6 +1266,7 @@ export default function PointOfSaleScreen({
         inputType: 'voice',
       });
     } finally {
+      setVoiceAvailable(isVoskSttAvailable());
       setProcessingVoiceOrder(false);
     }
   };
@@ -1279,7 +1577,8 @@ export default function PointOfSaleScreen({
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, isLightTheme && styles.containerLight]}>
+    <View style={[styles.screenRoot, isLightTheme && styles.screenRootLight]}>
+      <ScrollView contentContainerStyle={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.headerRow}>
         <Text style={[styles.title, isLightTheme && styles.titleLight]}>Punto de Venta</Text>
         <Text style={currentSession ? styles.sessionOk : styles.sessionWarn}>
@@ -1310,97 +1609,219 @@ export default function PointOfSaleScreen({
         </View>
         {showAiTools ? (
           <View style={styles.aiToolsWrap}>
-            <View style={styles.invoiceAgentRow}>
+            <View style={styles.aiActionsRow}>
               <Pressable
                 onPress={scanInvoiceWithAgent}
-                disabled={processingInvoice}
-                style={[styles.invoiceAgentBtn, processingInvoice && styles.btnDisabled]}
+                disabled={processingInvoice || preparingEmbeddedLlm}
+                style={[
+                  styles.aiIconBtn,
+                  (processingInvoice || preparingEmbeddedLlm) && styles.btnDisabled,
+                  isLightTheme && styles.aiIconBtnLight,
+                ]}
               >
-                <View style={styles.btnContentRow}>
-                  <Ionicons name="camera-outline" size={16} color="#eff6ff" />
-                  <Text style={styles.invoiceAgentBtnText}>
-                    {processingInvoice ? 'Analizando factura...' : 'Escanear factura (IA)'}
-                  </Text>
-                </View>
+                <Ionicons name="camera-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Camara</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setShowChatComposer((prev) => !prev)}
+                disabled={processingChatOrder || processingVoiceOrder || preparingEmbeddedLlm}
+                style={[
+                  styles.aiIconBtn,
+                  (processingChatOrder || processingVoiceOrder || preparingEmbeddedLlm) && styles.btnDisabled,
+                  isLightTheme && styles.aiIconBtnLight,
+                  showChatComposer && styles.aiIconBtnActive,
+                ]}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Chat</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={parseVoiceOrderWithVosk}
+                disabled={processingChatOrder || preparingEmbeddedLlm}
+                style={[
+                  styles.aiIconBtn,
+                  (processingChatOrder || preparingEmbeddedLlm) && styles.btnDisabled,
+                  isLightTheme && styles.aiIconBtnLight,
+                  processingVoiceOrder && styles.aiIconBtnActive,
+                ]}
+              >
+                <Ionicons name="mic-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Voz</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setShowAiLogs((prev) => !prev)}
+                style={[
+                  styles.aiIconBtn,
+                  isLightTheme && styles.aiIconBtnLight,
+                  showAiLogs && styles.aiIconBtnActive,
+                ]}
+              >
+                <Ionicons name={showAiLogs ? 'receipt' : 'receipt-outline'} size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Logs</Text>
               </Pressable>
             </View>
-            <TextInput
-              value={chatOrderText}
-              onChangeText={setChatOrderText}
-              placeholder="Pega pedido por chat. Ej: para Ana 2 cocas 350ml y 1 arroz diana 500"
-              placeholderTextColor="#64748b"
-              multiline
-              numberOfLines={3}
-              style={[styles.input, styles.chatOrderInput, isLightTheme && styles.inputLight]}
-            />
-            <Pressable
-              onPress={parseChatOrderWithAgent}
-              disabled={processingChatOrder || processingVoiceOrder}
-              style={[styles.chatOrderBtn, (processingChatOrder || processingVoiceOrder) && styles.btnDisabled]}
-            >
-              <View style={styles.btnContentRow}>
-                <Ionicons name="chatbubble-ellipses-outline" size={16} color="#ecfeff" />
-                <Text style={styles.chatOrderBtnText}>
-                  {processingChatOrder ? 'Convirtiendo chat...' : 'Convertir chat a venta (IA)'}
+
+            {showChatComposer ? (
+              <View style={styles.chatComposerWrap}>
+                <TextInput
+                  value={chatOrderText}
+                  onChangeText={setChatOrderText}
+                  placeholder="Pega pedido del chat..."
+                  placeholderTextColor="#64748b"
+                  multiline
+                  numberOfLines={2}
+                  style={[styles.input, styles.chatOrderInputCompact, isLightTheme && styles.inputLight]}
+                />
+                <Pressable
+                  onPress={parseChatOrderWithAgent}
+                  disabled={processingChatOrder || processingVoiceOrder || preparingEmbeddedLlm}
+                  style={[
+                    styles.chatSendBtn,
+                    (processingChatOrder || processingVoiceOrder || preparingEmbeddedLlm) && styles.btnDisabled,
+                  ]}
+                >
+                  <Ionicons name="send-outline" size={18} color="#ecfeff" />
+                </Pressable>
+              </View>
+            ) : null}
+
+            {aiWorking ? (
+              <View style={[styles.aiWorkingBanner, isLightTheme && styles.aiWorkingBannerLight]}>
+                <ActivityIndicator size="small" color={isLightTheme ? '#0369a1' : '#38bdf8'} />
+                <Text style={[styles.aiWorkingText, isLightTheme && styles.aiWorkingTextLight]}>
+                  {aiWorkingLabel || 'Procesando comando IA...'}
                 </Text>
               </View>
-            </Pressable>
-            <Pressable
-              onPress={parseVoiceOrderWithVosk}
-              disabled={!voiceAvailable || processingChatOrder}
-              style={[
-                styles.voiceOrderBtn,
-                (!voiceAvailable || processingChatOrder) && styles.btnDisabled,
-                processingVoiceOrder && styles.voiceOrderBtnActive,
-              ]}
-            >
-              <View style={styles.btnContentRow}>
-                <Ionicons name="mic-outline" size={16} color="#ecfeff" />
-                <Text style={styles.voiceOrderBtnText}>
-                  {!voiceAvailable
-                    ? 'Voz no disponible (Vosk)'
-                    : processingVoiceOrder
-                      ? 'Escuchando... tocar para cancelar'
-                      : 'Comando por voz (Vosk)'}
-                </Text>
-              </View>
-            </Pressable>
+            ) : null}
+
+            {preparingEmbeddedLlm ? (
+              <Text style={[styles.voicePreviewText, isLightTheme && styles.voicePreviewTextLight]}>
+                Preparando modelo local... {Math.round(embeddedDownloadProgress * 100)}%
+              </Text>
+            ) : null}
+
             {voicePreviewText ? (
               <Text style={[styles.voicePreviewText, isLightTheme && styles.voicePreviewTextLight]}>
                 Voz: {voicePreviewText}
               </Text>
             ) : null}
-            <View style={[styles.embeddedLlmCard, isLightTheme && styles.embeddedLlmCardLight]}>
-              <Text style={[styles.embeddedLlmTitle, isLightTheme && styles.embeddedLlmTitleLight]}>
-                LLM Local Qwen (modo: {localLlmMode})
-              </Text>
-              <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
-                Runtime: {embeddedLlmStatus?.runtime?.runtime_available ? 'Disponible' : 'No disponible'}
-              </Text>
-              <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
-                Modelo:{' '}
-                {embeddedLlmStatus?.model?.available
-                  ? `${Number(embeddedLlmStatus?.model?.mb || 0)} MB listo`
-                  : 'No descargado'}
-              </Text>
-              {preparingEmbeddedLlm ? (
-                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
-                  Descargando modelo... {Math.round(embeddedDownloadProgress * 100)}%
+
+            {showAiLogs ? (
+              <View style={[styles.embeddedLlmCard, isLightTheme && styles.embeddedLlmCardLight]}>
+                <Text style={[styles.embeddedLlmTitle, isLightTheme && styles.embeddedLlmTitleLight]}>
+                  Logs IA
                 </Text>
-              ) : null}
-              <Pressable
-                onPress={handlePrepareEmbeddedLlm}
-                disabled={preparingEmbeddedLlm}
-                style={[styles.embeddedLlmBtn, preparingEmbeddedLlm && styles.btnDisabled]}
-              >
-                <View style={styles.btnContentRow}>
-                  <Ionicons name="download-outline" size={16} color="#ecfeff" />
-                  <Text style={styles.embeddedLlmBtnText}>
-                    {preparingEmbeddedLlm ? 'Preparando modelo...' : 'Descargar/actualizar modelo local'}
+                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                  LLM local (modo: {localLlmMode})
+                </Text>
+                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                  Runtime: {embeddedLlmStatus?.runtime?.runtime_available ? 'Disponible' : 'No disponible'}
+                </Text>
+                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                  Modelo:{' '}
+                  {embeddedLlmStatus?.model?.available
+                    ? `${Number(embeddedLlmStatus?.model?.mb || 0)} MB listo`
+                    : 'No descargado'}
+                </Text>
+                <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                  Descarga automatica: al usar camara/chat/voz IA.
+                </Text>
+                {preparingEmbeddedLlm ? (
+                  <Text style={[styles.embeddedLlmMeta, isLightTheme && styles.embeddedLlmMetaLight]}>
+                    Descargando modelo... {Math.round(embeddedDownloadProgress * 100)}%
                   </Text>
-                </View>
-              </Pressable>
-            </View>
+                ) : null}
+
+                {invoiceScanSummary ? (
+                  <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
+                    <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
+                      OCR imagen
+                    </Text>
+                    <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                      Motor: {invoiceScanSummary.ocrEngine || 'nativo'}
+                    </Text>
+                    <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                      Texto detectado: {Number(invoiceScanSummary.ocrChars || 0)} caracteres ({Number(invoiceScanSummary.ocrLines || 0)} lineas)
+                    </Text>
+                    {invoiceScanSummary?.ocrPreview ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Preview: {invoiceScanSummary.ocrPreview}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {chatOrderSummary ? (
+                  <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
+                    <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
+                      Resultado IA
+                    </Text>
+                    <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                      Cargados: {chatOrderSummary.matchedCount || 0}
+                    </Text>
+                    <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                      Entrada: {getInputTypeLabel(chatOrderSummary.inputType || 'text')}
+                    </Text>
+                    <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                      Fuente: {chatOrderSummary.sourceLabel || 'engine'}
+                    </Text>
+                    {chatOrderSummary?.cacheCrossInput ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Cache cross-input: si
+                      </Text>
+                    ) : null}
+                    {chatOrderSummary?.showConfidence ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Confianza IA: {Math.round(Number(chatOrderSummary.confidence || 0) * 100)}%
+                      </Text>
+                    ) : null}
+                    {chatOrderSummary?.fallbackChain?.length ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Ruta: {chatOrderSummary.fallbackChain.join(' -> ')}
+                      </Text>
+                    ) : null}
+                    {chatOrderSummary?.unmatched?.length ? (
+                      <Text style={styles.invoiceSummaryWarn}>
+                        Sin match: {chatOrderSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
+                      </Text>
+                    ) : null}
+                    {commandEngineMetrics?.totals?.requests > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Engine hit-rate cache: {Math.round(Number(commandEngineMetrics?.totals?.hit_rate || 0) * 100)}%
+                      </Text>
+                    ) : null}
+                    {commandEngineMetrics?.resolution?.total > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Uso cache: {getResolutionSourceUsage(commandEngineMetrics, 'local_cache').count} ({getResolutionSourceUsage(commandEngineMetrics, 'local_cache').sharePct}%)
+                      </Text>
+                    ) : null}
+                    {commandEngineMetrics?.resolution?.total > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Uso parser local: {getResolutionSourceUsage(commandEngineMetrics, 'deterministic_parser').count} ({getResolutionSourceUsage(commandEngineMetrics, 'deterministic_parser').sharePct}%)
+                      </Text>
+                    ) : null}
+                    {commandEngineMetrics?.resolution?.total > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Uso LLM local: {getResolutionSourceUsage(commandEngineMetrics, 'local_llm').count} ({getResolutionSourceUsage(commandEngineMetrics, 'local_llm').sharePct}%)
+                      </Text>
+                    ) : null}
+                    {commandEngineMetrics?.resolution?.total > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Uso LLM cloud: {getResolutionSourceUsage(commandEngineMetrics, 'cloud_llm').count} ({getResolutionSourceUsage(commandEngineMetrics, 'cloud_llm').sharePct}%)
+                      </Text>
+                    ) : null}
+                    {Number(commandEngineMetrics?.resolution?.cache_cross_input_hits || 0) > 0 ? (
+                      <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
+                        Cache cross-input total: {Number(commandEngineMetrics?.resolution?.cache_cross_input_hits || 0)}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : null}
         <TextInput
@@ -1454,66 +1875,6 @@ export default function PointOfSaleScreen({
             </Pressable>
           </View>
         ))}
-        {invoiceScanSummary ? (
-          <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
-            <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
-              Lectura factura
-            </Text>
-            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-              Cargados: {invoiceScanSummary.matchedCount || 0}
-            </Text>
-            {invoiceScanSummary?.invoice?.vendor_name ? (
-              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-                Proveedor: {invoiceScanSummary.invoice.vendor_name}
-              </Text>
-            ) : null}
-            {invoiceScanSummary?.customerSuggestion?.full_name ? (
-              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-                Cliente sugerido: {invoiceScanSummary.customerSuggestion.full_name}
-                {invoiceScanSummary.customerAutoloaded ? ' (cargado)' : ''}
-              </Text>
-            ) : null}
-            {invoiceScanSummary?.unmatched?.length ? (
-              <Text style={styles.invoiceSummaryWarn}>
-                Sin match: {invoiceScanSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-        {chatOrderSummary ? (
-          <View style={[styles.invoiceSummaryCard, isLightTheme && styles.invoiceSummaryCardLight]}>
-            <Text style={[styles.invoiceSummaryTitle, isLightTheme && styles.invoiceSummaryTitleLight]}>
-              Conversion chat
-            </Text>
-            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-              Cargados: {chatOrderSummary.matchedCount || 0}
-            </Text>
-            <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-              Confianza IA: {Math.round(Number(chatOrderSummary.confidence || 0) * 100)}%
-            </Text>
-            {chatOrderSummary?.customerSuggestion?.full_name ? (
-              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-                Cliente sugerido: {chatOrderSummary.customerSuggestion.full_name}
-                {chatOrderSummary.customerAutoloaded ? ' (cargado)' : ''}
-              </Text>
-            ) : null}
-            {chatOrderSummary?.notes ? (
-              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-                Nota IA: {chatOrderSummary.notes}
-              </Text>
-            ) : null}
-            {chatOrderSummary?.unmatched?.length ? (
-              <Text style={styles.invoiceSummaryWarn}>
-                Sin match: {chatOrderSummary.unmatched.slice(0, 3).map((x) => x.raw_name).join(' · ')}
-              </Text>
-            ) : null}
-            {commandEngineMetrics?.totals?.requests > 0 ? (
-              <Text style={[styles.invoiceSummaryLine, isLightTheme && styles.invoiceSummaryLineLight]}>
-                Engine hit-rate cache: {Math.round(Number(commandEngineMetrics?.totals?.hit_rate || 0) * 100)}%
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
@@ -1728,9 +2089,6 @@ export default function PointOfSaleScreen({
         />
       </View>
 
-      {message ? <Text style={styles.okText}>{message}</Text> : null}
-      {error ? <Text style={styles.warnText}>{error}</Text> : null}
-
       <Pressable
         onPress={handleProcessSale}
         disabled={processing || cart.length === 0 || remaining > 0}
@@ -1754,11 +2112,37 @@ export default function PointOfSaleScreen({
           <Text style={styles.clearText}>Limpiar</Text>
         </View>
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+      {floatingNotice ? (
+        <View
+          style={[
+            styles.floatingNotice,
+            floatingNotice.type === 'error' ? styles.floatingNoticeError : styles.floatingNoticeInfo,
+            isLightTheme && styles.floatingNoticeLight,
+          ]}
+        >
+          <Ionicons
+            name={floatingNotice.type === 'error' ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            size={16}
+            color={floatingNotice.type === 'error' ? '#fecaca' : '#bbf7d0'}
+          />
+          <Text style={styles.floatingNoticeText} numberOfLines={3}>
+            {floatingNotice.text}
+          </Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screenRoot: {
+    flex: 1,
+    backgroundColor: '#0b0f14',
+  },
+  screenRootLight: {
+    backgroundColor: '#f8fafc',
+  },
   container: {
     padding: 12,
     paddingBottom: 24,
@@ -1857,6 +2241,61 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#0f172a',
   },
+  aiActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  aiIconBtn: {
+    flex: 1,
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#172554',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  aiIconBtnLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#e0f2fe',
+  },
+  aiIconBtnActive: {
+    backgroundColor: '#0f766e',
+    borderColor: '#0f766e',
+  },
+  aiIconBtnText: {
+    marginTop: 2,
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  aiIconBtnTextLight: {
+    color: '#0c4a6e',
+  },
+  chatComposerWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginBottom: 8,
+  },
+  chatOrderInputCompact: {
+    flex: 1,
+    minHeight: 52,
+    maxHeight: 90,
+    textAlignVertical: 'top',
+    marginBottom: 0,
+  },
+  chatSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#0f766e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
   invoiceAgentRow: {
     marginBottom: 8,
   },
@@ -1910,6 +2349,31 @@ const styles = StyleSheet.create({
   voicePreviewTextLight: {
     color: '#0369a1',
   },
+  aiWorkingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    backgroundColor: '#082f49',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  aiWorkingBannerLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#e0f2fe',
+  },
+  aiWorkingText: {
+    flex: 1,
+    color: '#bae6fd',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  aiWorkingTextLight: {
+    color: '#0c4a6e',
+  },
   embeddedLlmCard: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -1938,18 +2402,6 @@ const styles = StyleSheet.create({
   },
   embeddedLlmMetaLight: {
     color: '#334155',
-  },
-  embeddedLlmBtn: {
-    marginTop: 6,
-    backgroundColor: '#1d4ed8',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  embeddedLlmBtnText: {
-    color: '#eff6ff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   favoritesWrap: {
     marginBottom: 6,
@@ -2434,6 +2886,41 @@ const styles = StyleSheet.create({
   clearText: {
     color: '#fca5a5',
     fontWeight: '700',
+  },
+  floatingNotice: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    zIndex: 25,
+  },
+  floatingNoticeError: {
+    backgroundColor: '#7f1d1d',
+    borderColor: '#ef4444',
+  },
+  floatingNoticeInfo: {
+    backgroundColor: '#14532d',
+    borderColor: '#22c55e',
+  },
+  floatingNoticeLight: {
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  floatingNoticeText: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   btnDisabled: {
     opacity: 0.5,

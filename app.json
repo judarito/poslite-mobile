@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "POSLite",
+    "name": "OfirOne",
     "slug": "poslite-mobile",
     "version": "1.0.0",
     "newArchEnabled": true,
@@ -16,7 +16,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.juan.d.ricardo.t.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "POSLite necesita acceso al microfono para procesar comandos de voz."
+        "NSMicrophoneUsageDescription": "OfirOne necesita acceso al microfono para procesar comandos de voz."
       }
     },
     "android": {
@@ -45,8 +45,8 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "POSLite necesita acceso a la camara para escanear facturas.",
-          "photosPermission": "POSLite necesita acceso a fotos para seleccionar facturas."
+          "cameraPermission": "OfirOne necesita acceso a la camara para escanear facturas.",
+          "photosPermission": "OfirOne necesita acceso a fotos para seleccionar facturas."
         }
       ],
       "@react-native-community/datetimepicker"

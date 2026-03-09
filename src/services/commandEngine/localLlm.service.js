@@ -2,6 +2,7 @@ import { parseSaleCommandWithEmbeddedLlm } from './embeddedLlm.service';
 
 const LOCAL_LLM_ENDPOINT = process.env.EXPO_PUBLIC_LOCAL_LLM_PARSER_URL || '';
 const DEFAULT_TIMEOUT_MS = 2200;
+const MIN_EMBEDDED_TIMEOUT_MS = 8000;
 
 function normalizeLines(lines) {
   const source = Array.isArray(lines) ? lines : [];
@@ -16,9 +17,13 @@ function normalizeLines(lines) {
     .filter((item) => item.raw_name);
 }
 
-function resolveTimeoutMs() {
+function resolveTimeoutMs(mode = 'auto') {
   const parsed = Number(process.env.EXPO_PUBLIC_LOCAL_LLM_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+  if (mode === 'embedded' || mode === 'auto') {
+    return Math.max(MIN_EMBEDDED_TIMEOUT_MS, resolved);
+  }
+  return resolved;
 }
 
 function resolveLocalLlmMode() {
@@ -57,7 +62,7 @@ export async function parseSaleCommandWithEndpointLlm({ tenantId, text, inputTyp
   }
 
   const controller = new AbortController();
-  const timeoutMs = resolveTimeoutMs();
+  const timeoutMs = resolveTimeoutMs('endpoint');
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -126,7 +131,7 @@ export async function parseSaleCommandWithEndpointLlm({ tenantId, text, inputTyp
 
 export async function parseSaleCommandWithLocalLlm({ tenantId, text, inputType = 'text' }) {
   const mode = resolveLocalLlmMode();
-  const timeoutMs = resolveTimeoutMs();
+  const timeoutMs = resolveTimeoutMs(mode);
 
   if (mode === 'embedded') {
     return parseSaleCommandWithEmbeddedLlm({

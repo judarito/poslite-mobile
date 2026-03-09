@@ -7,6 +7,7 @@
     "android": "NODE_ENV=development expo run:android",
     "ios": "NODE_ENV=development expo run:ios",
     "web": "NODE_ENV=development expo start --web",
+    "postinstall": "sh ./scripts/postinstall/patch-llama-rn.sh",
     "local-llm:qwen": "node scripts/local-llm/qwen-parser-server.mjs"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "expo-notifications": "~0.32.16",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
+    "expo-text-extractor": "^2.0.0",
     "llama.rn": "^0.10.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",

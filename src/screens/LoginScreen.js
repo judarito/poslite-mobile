@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -42,16 +43,10 @@ export default function LoginScreen({
         <ScrollView contentContainerStyle={styles.loginScroll} keyboardShouldPersistTaps="handled">
           <View style={[styles.loginCard, isLightTheme && styles.loginCardLight]}>
             <View style={styles.loginBrandRow}>
-              <View style={[styles.loginBrandIconWrap, isLightTheme && styles.loginBrandIconWrapLight]}>
-                <Ionicons
-                  name="storefront-outline"
-                  size={22}
-                  color={isLightTheme ? '#1d4ed8' : '#93c5fd'}
-                />
-              </View>
+              <Image source={require('../../assets/logo-login.png')} style={styles.loginBrandLogo} resizeMode="contain" />
               <View style={styles.loginBrandTextWrap}>
                 <Text style={[styles.loginTitle, isLightTheme && styles.loginTitleLight]}>
-                  POSLite Mobile
+                  OfirOne
                 </Text>
                 <Text style={[styles.loginSubtitle, isLightTheme && styles.loginSubtitleLight]}>
                   Accede a tu punto de venta
@@ -195,19 +190,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
-  loginBrandIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  loginBrandIconWrapLight: {
-    backgroundColor: '#eef2ff',
-    borderColor: '#bfdbfe',
+  loginBrandLogo: {
+    width: 72,
+    height: 72,
   },
   loginBrandTextWrap: {
     marginLeft: 10,

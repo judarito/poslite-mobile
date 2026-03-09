@@ -2,9 +2,36 @@ import { normalizeCommandText, normalizeCustomerName } from './normalize.service
 
 const CONNECTOR_SPLIT_REGEX = /\s+(?:y|e)\s+/i;
 const NOISE_PREFIX_REGEX = /^(?:hola|buenas|buenos dias|buenas tardes|pedido|por favor|favor|agrega(?:r)?|anade|añade|quiero|necesito|llevo)\s+/i;
+const NON_ITEM_PREFIX_REGEX = /^(?:nota|observacion|observación|obs|entrega|cliente|a nombre de)\b/i;
 const QUANTITY_FIRST_REGEX = /^(\d+(?:[.,]\d+)?)\s*(?:x|und?|unidades?|uds?|u|kg|g|gr|grs|lb|l|lt|lts|ml|caja|cajas|paq|paquete|paquetes)?\s+(.+)$/i;
+const QUANTITY_WORD_FIRST_REGEX = /^([a-záéíóúñ]+)\s+(.+)$/i;
 const QUANTITY_LAST_REGEX = /^(.+?)\s*(?:x|\*)\s*(\d+(?:[.,]\d+)?)$/i;
 const SINGLE_ARTICLE_REGEX = /^(?:un|una)\s+(.+)$/i;
+const NUMBER_WORD_MAP = {
+  un: 1,
+  uno: 1,
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+  trece: 13,
+  catorce: 14,
+  quince: 15,
+  dieciseis: 16,
+  dieciséis: 16,
+  diecisiete: 17,
+  dieciocho: 18,
+  diecinueve: 19,
+  veinte: 20,
+};
 
 function toPositiveNumber(value, fallback = 1) {
   const parsed = Number(String(value || '').replace(',', '.'));
@@ -80,9 +107,17 @@ function cleanSegment(segment) {
   return text.trim();
 }
 
+function parseQuantityWord(token) {
+  const key = String(token || '').trim().toLowerCase();
+  const value = NUMBER_WORD_MAP[key];
+  if (!value) return null;
+  return Math.max(1, Number(value || 1));
+}
+
 function parseSegment(segment) {
   const original = cleanSegment(segment);
   if (!original) return null;
+  if (NON_ITEM_PREFIX_REGEX.test(original)) return null;
 
   let quantity = null;
   let rawName = null;
@@ -102,6 +137,15 @@ function parseSegment(segment) {
   }
 
   if (!rawName) {
+    const qWord = original.match(QUANTITY_WORD_FIRST_REGEX);
+    const parsedWordQty = parseQuantityWord(qWord?.[1]);
+    if (parsedWordQty && qWord?.[2]) {
+      quantity = parsedWordQty;
+      rawName = qWord[2].trim();
+    }
+  }
+
+  if (!rawName) {
     const single = original.match(SINGLE_ARTICLE_REGEX);
     if (single?.[1]) {
       quantity = 1;
@@ -109,7 +153,11 @@ function parseSegment(segment) {
     }
   }
 
-  if (!rawName) return null;
+  if (!rawName) {
+    // Fallback para voz: "coca cola", "arroz integral", etc.
+    rawName = original;
+    quantity = 1;
+  }
 
   const cleanedName = rawName
     .replace(/^(de\s+)/i, '')
