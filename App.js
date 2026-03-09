@@ -22,6 +22,7 @@ import { ThemeModeProvider } from './src/lib/themeMode';
 import { normalizeThemePreference, resolveThemeMode } from './src/lib/themePreferences';
 import {
   clearAuthCache,
+  clearOfflineOperationalData,
   clearMenuCache,
   getAuthCache,
   getMenuCache,
@@ -598,8 +599,11 @@ export default function App() {
     }
   };
 
-  const refreshPendingOpsCount = async () => {
-    const pendingCount = await getPendingOpsCount();
+  const refreshPendingOpsCount = async ({
+    tenantId = tenant?.tenant_id || null,
+    userId = null,
+  } = {}) => {
+    const pendingCount = await getPendingOpsCount({ tenantId, userId });
     setPendingOpsCount(pendingCount);
   };
 
@@ -882,7 +886,10 @@ export default function App() {
         userProfile: enriched,
         tenant: tenantData,
       });
-      const pendingCount = await getPendingOpsCount();
+      const pendingCount = await getPendingOpsCount({
+        tenantId: tenantData?.tenant_id || null,
+        userId: null,
+      });
       setPendingOpsCount(pendingCount);
       setOfflineAvailable(true);
       setCachedAt(new Date().toISOString());
@@ -948,8 +955,15 @@ export default function App() {
 
     const runSync = async () => {
       if (!active || offlineMode || !session || !userProfile?.user_id || !tenant?.tenant_id) return;
-      const syncResult = await syncPendingOperations({ limit: 20 });
-      await refreshPendingOpsCount();
+      const syncResult = await syncPendingOperations({
+        limit: 20,
+        tenantId: tenant?.tenant_id || null,
+        userId: null,
+      });
+      await refreshPendingOpsCount({
+        tenantId: tenant?.tenant_id || null,
+        userId: null,
+      });
       if (syncResult?.processed > 0) {
         await loadDashboard(tenant.tenant_id);
         await warmCriticalOfflineCaches(tenant.tenant_id, userProfile.user_id);
@@ -1137,13 +1151,17 @@ export default function App() {
     setNotificationsOpen(false);
     setNotifications([]);
     setUnreadNotifications(0);
-    const pendingCount = await getPendingOpsCount();
+    const pendingCount = await getPendingOpsCount({
+      tenantId: cached?.tenant?.tenant_id || null,
+      userId: null,
+    });
     setPendingOpsCount(pendingCount);
   };
 
   const handleClearOfflineCache = async () => {
     await clearAuthCache();
     await clearMenuCache();
+    await clearOfflineOperationalData();
     setOfflineAvailable(false);
     setCachedAt('');
     setTenantSettings({});
@@ -1159,6 +1177,7 @@ export default function App() {
     setNotificationsOpen(false);
     setNotifications([]);
     setUnreadNotifications(0);
+    setPendingOpsCount(0);
   };
 
   if (loadingBoot || loadingProfile) {

@@ -206,6 +206,24 @@ export async function clearSyncState(key) {
   await db.runAsync(`DELETE FROM sync_state WHERE key = ?`, [key]);
 }
 
+function normalizePendingQueryInput(input, defaultLimit = 50) {
+  if (typeof input === 'number') {
+    return {
+      limit: Number.isFinite(input) ? Math.max(1, Math.floor(input)) : defaultLimit,
+      tenantId: null,
+      userId: null,
+    };
+  }
+
+  const options = input || {};
+  const parsedLimit = Number(options.limit || defaultLimit);
+  return {
+    limit: Number.isFinite(parsedLimit) ? Math.max(1, Math.floor(parsedLimit)) : defaultLimit,
+    tenantId: options.tenantId || null,
+    userId: options.userId || null,
+  };
+}
+
 export async function enqueuePendingOp(op) {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -230,15 +248,25 @@ export async function enqueuePendingOp(op) {
   );
 }
 
-export async function getPendingOpsCount() {
+export async function getPendingOpsCount(filters = {}) {
+  const tenantId = filters?.tenantId || null;
+  const userId = filters?.userId || null;
   const db = await getDb();
   const row = await db.getFirstAsync(
-    `SELECT COUNT(*) AS total FROM pending_ops WHERE status IN ('PENDING','FAILED')`,
+    `
+      SELECT COUNT(*) AS total
+      FROM pending_ops
+      WHERE status IN ('PENDING','FAILED')
+        AND (? IS NULL OR tenant_id = ?)
+        AND (? IS NULL OR user_id = ?)
+    `,
+    [tenantId, tenantId, userId, userId],
   );
   return Number(row?.total || 0);
 }
 
-export async function getPendingOps(limit = 50) {
+export async function getPendingOps(input = 50) {
+  const { limit, tenantId, userId } = normalizePendingQueryInput(input, 50);
   const db = await getDb();
   const rows = await db.getAllAsync(
     `
@@ -248,10 +276,12 @@ export async function getPendingOps(limit = 50) {
       FROM pending_ops
       WHERE status IN ('PENDING', 'FAILED')
         AND (last_error IS NULL OR last_error NOT LIKE 'NO_RETRY:%')
+        AND (? IS NULL OR tenant_id = ?)
+        AND (? IS NULL OR user_id = ?)
       ORDER BY created_at ASC
       LIMIT ?
     `,
-    [limit],
+    [tenantId, tenantId, userId, userId, limit],
   );
 
   return (rows || []).map((row) => ({
@@ -421,4 +451,17 @@ export async function updatePendingOpPayload(opId, payload) {
     `,
     [JSON.stringify(payload || {}), now, opId],
   );
+}
+
+export async function clearOfflineOperationalData() {
+  const db = await getDb();
+  await db.execAsync(`
+    DELETE FROM pending_ops;
+    DELETE FROM sync_state;
+    DELETE FROM local_sales_draft;
+    DELETE FROM local_sale_lines_draft;
+    DELETE FROM local_payments_draft;
+    DELETE FROM local_cartera_payments_draft;
+    DELETE FROM local_supplier_payments_draft;
+  `);
 }

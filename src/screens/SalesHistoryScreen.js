@@ -562,7 +562,10 @@ export default function SalesHistoryScreen({
 
   const refreshPendingCount = async () => {
     if (!onPendingOpsChange) return;
-    const next = await getPendingOpsCount();
+    const next = await getPendingOpsCount({
+      tenantId: tenant?.tenant_id || null,
+      userId: null,
+    });
     onPendingOpsChange(next);
   };
 
@@ -603,7 +606,11 @@ export default function SalesHistoryScreen({
     }
 
     if (!offlineMode) {
-      await syncPendingOperations({ limit: 20 });
+      await syncPendingOperations({
+        limit: 20,
+        tenantId: tenant?.tenant_id || null,
+        userId: null,
+      });
     }
 
     const stateAfter = await getPendingOfflineSaleByOperationId(operationId);
@@ -666,6 +673,9 @@ export default function SalesHistoryScreen({
       lines.map((line, idx) => ({
         key: `${line.variant_id || idx}-${idx}`,
         variant_id: line.variant_id,
+        sku: line.sku || null,
+        product_name: line.product_name || line.productName || null,
+        variant_name: line.variant_name || line.variantName || null,
         qty: Number(line.qty || 1),
         unit_price: Number(line.unit_price || 0),
         discount: Number(line.discount || 0),
@@ -679,6 +689,9 @@ export default function SalesHistoryScreen({
     const normalizedLines = editLines
       .map((line) => ({
         variant_id: line.variant_id,
+        sku: line.sku || null,
+        product_name: line.product_name || null,
+        variant_name: line.variant_name || null,
         qty: Math.max(0, Math.round(Number(line.qty || 0))),
         unit_price: Number(line.unit_price || 0),
         discount: Number(line.discount || 0),
@@ -752,7 +765,11 @@ export default function SalesHistoryScreen({
     }
 
     if (!offlineMode) {
-      await syncPendingOperations({ limit: 20 });
+      await syncPendingOperations({
+        limit: 20,
+        tenantId: tenant?.tenant_id || null,
+        userId: null,
+      });
     }
 
     const stateAfter = await getPendingOfflineSaleByOperationId(editSale.operation_id);

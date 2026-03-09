@@ -7,6 +7,106 @@ import {
   updatePendingOpPayload,
 } from '../storage/sqlite/database';
 
+const UUID_PATTERN = '\\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\b';
+
+function normalizeVariantId(value) {
+  const id = String(value || '').trim().toLowerCase();
+  return id || null;
+}
+
+function sanitizeSyncError(rawError) {
+  const raw = String(rawError || '').trim();
+  if (!raw) return null;
+  return raw.startsWith('NO_RETRY:') ? raw.slice('NO_RETRY:'.length).trim() : raw;
+}
+
+function composeVariantLabel({ productName, variantName, sku }) {
+  const product = String(productName || '').trim();
+  const variant = String(variantName || '').trim();
+  const code = String(sku || '').trim();
+
+  if (product && variant && product.toLowerCase() !== variant.toLowerCase()) {
+    return `${product} - ${variant}${code ? ` (${code})` : ''}`;
+  }
+  if (product) return `${product}${code ? ` (${code})` : ''}`;
+  if (variant) return `${variant}${code ? ` (${code})` : ''}`;
+  if (code) return `SKU ${code}`;
+  return null;
+}
+
+function buildPayloadVariantLabelMap(payload = {}) {
+  const lines = Array.isArray(payload?.lines) ? payload.lines : [];
+  const map = new Map();
+  lines.forEach((line) => {
+    const variantId = normalizeVariantId(line?.variant_id);
+    if (!variantId || map.has(variantId)) return;
+    const label = composeVariantLabel({
+      productName: line?.product_name || line?.productName,
+      variantName: line?.variant_name || line?.variantName,
+      sku: line?.sku,
+    });
+    if (label) map.set(variantId, label);
+  });
+  return map;
+}
+
+function extractVariantIdsFromError(syncError) {
+  const clean = sanitizeSyncError(syncError);
+  if (!clean) return [];
+  const matches = clean.match(new RegExp(UUID_PATTERN, 'ig')) || [];
+  return Array.from(new Set(matches.map((id) => normalizeVariantId(id)).filter(Boolean)));
+}
+
+async function fetchVariantLabelsById(tenantId, variantIds = []) {
+  if (!tenantId || !Array.isArray(variantIds) || !variantIds.length) return {};
+  try {
+    const { data, error } = await supabase
+      .from('product_variants')
+      .select('variant_id, sku, variant_name, product:product_id(name)')
+      .eq('tenant_id', tenantId)
+      .in('variant_id', variantIds);
+
+    if (error) throw error;
+
+    return (data || []).reduce((acc, row) => {
+      const key = normalizeVariantId(row?.variant_id);
+      if (!key) return acc;
+      const label = composeVariantLabel({
+        productName: row?.product?.name || '',
+        variantName: row?.variant_name || '',
+        sku: row?.sku || '',
+      });
+      if (label) acc[key] = label;
+      return acc;
+    }, {});
+  } catch (_error) {
+    return {};
+  }
+}
+
+function formatSyncErrorWithVariantLabels(rawSyncError, payload = {}, remoteLabels = {}) {
+  const syncError = sanitizeSyncError(rawSyncError);
+  if (!syncError) return null;
+
+  const payloadLabels = buildPayloadVariantLabelMap(payload);
+  const getLabel = (variantId) => {
+    const key = normalizeVariantId(variantId);
+    if (!key) return null;
+    return payloadLabels.get(key) || remoteLabels[key] || null;
+  };
+
+  const phraseRegex = /para\s+variante\s+([0-9a-f-]{36})/i;
+  const phraseMatch = syncError.match(phraseRegex);
+  if (phraseMatch?.[1]) {
+    const label = getLabel(phraseMatch[1]);
+    if (label) {
+      return syncError.replace(phraseRegex, `para ${label}`);
+    }
+  }
+
+  return syncError.replace(new RegExp(UUID_PATTERN, 'ig'), (variantId) => getLabel(variantId) || variantId);
+}
+
 export async function getSales(tenantId, page = 1, pageSize = 20, filters = {}) {
   if (!tenantId) {
     return { success: false, error: 'tenantId es requerido', data: [], total: 0 };
@@ -64,6 +164,14 @@ export async function getPendingOfflineSales(tenantId, filters = {}) {
   if (!tenantId) return { success: true, data: [] };
   try {
     const rows = await getPendingSaleOps(tenantId, 300);
+    const failedVariantIds = Array.from(
+      new Set(
+        rows
+          .flatMap((op) => extractVariantIdsFromError(op?.lastError))
+          .filter(Boolean),
+      ),
+    );
+    const remoteLabels = await fetchVariantLabelsById(tenantId, failedVariantIds);
 
     const fromDate = filters.from_date ? new Date(filters.from_date) : null;
     const toDate = filters.to_date ? new Date(filters.to_date) : null;
@@ -76,10 +184,7 @@ export async function getPendingOfflineSales(tenantId, filters = {}) {
         const payments = Array.isArray(payload.payments) ? payload.payments : [];
         const total = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
         const status = op.status === 'FAILED' ? 'FAILED_SYNC' : 'PENDING_SYNC';
-        const rawSyncError = op.lastError || null;
-        const syncError = rawSyncError?.startsWith('NO_RETRY:')
-          ? rawSyncError.slice('NO_RETRY:'.length)
-          : rawSyncError;
+        const syncError = formatSyncErrorWithVariantLabels(op.lastError || null, payload, remoteLabels);
         return {
           sale_id: `offline:${op.opId}`,
           sale_number: `OFF-${String(op.opId || '').slice(-6).toUpperCase()}`,
@@ -151,17 +256,17 @@ export async function getPendingOfflineSaleByOperationId(operationId) {
   try {
     const row = await getPendingSaleOpById(operationId);
     if (!row) return { success: true, data: null };
-    const rawSyncError = row.lastError || null;
-    const syncError = rawSyncError?.startsWith('NO_RETRY:')
-      ? rawSyncError.slice('NO_RETRY:'.length)
-      : rawSyncError;
+    const payload = row.payload || {};
+    const failedVariantIds = extractVariantIdsFromError(row?.lastError);
+    const remoteLabels = await fetchVariantLabelsById(row.tenantId, failedVariantIds);
+    const syncError = formatSyncErrorWithVariantLabels(row.lastError || null, payload, remoteLabels);
     return {
       success: true,
       data: {
         operation_id: row.opId,
         status: row.status === 'FAILED' ? 'FAILED_SYNC' : 'PENDING_SYNC',
         sync_error: syncError,
-        payload: row.payload || {},
+        payload,
       },
     };
   } catch (error) {

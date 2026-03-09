@@ -1472,6 +1472,9 @@ export default function PointOfSaleScreen({
         const factor = inclTax ? 1 + taxRate : 1;
         return {
           variant_id: line.variant_id,
+          sku: line.sku || null,
+          product_name: line.productName || null,
+          variant_name: line.variantName || null,
           qty: line.quantity,
           unit_price: inclTax ? Math.round(line.unit_price / factor) : line.unit_price,
           discount: inclTax ? Math.round((line.discount || 0) / factor) : line.discount || 0,
@@ -1514,7 +1517,10 @@ export default function PointOfSaleScreen({
           deviceId,
           payload,
         });
-        const pendingCount = await getPendingOpsCount();
+        const pendingCount = await getPendingOpsCount({
+          tenantId: tenant?.tenant_id || null,
+          userId: null,
+        });
         if (onPendingOpsChange) {
           onPendingOpsChange(pendingCount);
         }
@@ -1539,7 +1545,10 @@ export default function PointOfSaleScreen({
             deviceId,
             payload,
           });
-          const pendingCount = await getPendingOpsCount();
+          const pendingCount = await getPendingOpsCount({
+            tenantId: tenant?.tenant_id || null,
+            userId: null,
+          });
           if (onPendingOpsChange) {
             onPendingOpsChange(pendingCount);
           }
@@ -1554,7 +1563,10 @@ export default function PointOfSaleScreen({
       }
 
       clearSale();
-      const pendingCount = await getPendingOpsCount();
+      const pendingCount = await getPendingOpsCount({
+        tenantId: tenant?.tenant_id || null,
+        userId: null,
+      });
       if (onPendingOpsChange) {
         onPendingOpsChange(pendingCount);
       }

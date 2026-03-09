@@ -17,6 +17,10 @@ function sessionCacheKey(tenantId, userId) {
   return `pos-open-session:${tenantId}:${userId}`;
 }
 
+function taxInfoCacheKey(tenantId, variantId) {
+  return `pos-tax-info:${tenantId}:${variantId}`;
+}
+
 function normalizeSearchText(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -358,19 +362,36 @@ export async function searchCustomersOffline(tenantId, search, limit = 20) {
 }
 
 export async function getTaxInfoForVariant(tenantId, variantId) {
+  const cacheKey = taxInfoCacheKey(tenantId, variantId);
   try {
     const { data, error } = await supabase.rpc('fn_get_tax_info_for_variant', {
       p_tenant: tenantId,
       p_variant: variantId,
     });
     if (error) throw error;
-    return {
-      success: true,
-      rate: data?.rate || 0,
+    const normalized = {
+      rate: Number(data?.rate || 0),
       code: data?.code || null,
       name: data?.name || null,
     };
+    await saveSimpleCache(cacheKey, normalized);
+    return {
+      success: true,
+      ...normalized,
+      source: 'server',
+    };
   } catch (error) {
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value) {
+      return {
+        success: true,
+        rate: Number(cached.value.rate || 0),
+        code: cached.value.code || null,
+        name: cached.value.name || null,
+        source: 'cache',
+        warning: error.message,
+      };
+    }
     return { success: false, rate: 0, code: null, name: null, error: error.message };
   }
 }

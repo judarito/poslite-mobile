@@ -7,6 +7,24 @@ const WEB_PENDING_OPS_KEY = 'poslite_web_pending_ops';
 
 export async function initOfflineDatabase() {}
 
+function normalizePendingQueryInput(input, defaultLimit = 50) {
+  if (typeof input === 'number') {
+    return {
+      limit: Number.isFinite(input) ? Math.max(1, Math.floor(input)) : defaultLimit,
+      tenantId: null,
+      userId: null,
+    };
+  }
+
+  const options = input || {};
+  const parsedLimit = Number(options.limit || defaultLimit);
+  return {
+    limit: Number.isFinite(parsedLimit) ? Math.max(1, Math.floor(parsedLimit)) : defaultLimit,
+    tenantId: options.tenantId || null,
+    userId: options.userId || null,
+  };
+}
+
 export async function saveAuthCache({ authUserId, userProfile, tenant }) {
   const payload = {
     authUserId,
@@ -84,18 +102,30 @@ export async function enqueuePendingOp(op = {}) {
   );
 }
 
-export async function getPendingOpsCount() {
-  return Number((await AsyncStorage.getItem(WEB_PENDING_KEY)) || 0);
+export async function getPendingOpsCount(filters = {}) {
+  const tenantId = filters?.tenantId || null;
+  const userId = filters?.userId || null;
+  const raw = await AsyncStorage.getItem(WEB_PENDING_OPS_KEY);
+  const list = raw ? JSON.parse(raw) : [];
+  return list.filter(
+    (op) =>
+      (op.status === 'PENDING' || op.status === 'FAILED') &&
+      (!tenantId || op.tenantId === tenantId) &&
+      (!userId || op.userId === userId),
+  ).length;
 }
 
-export async function getPendingOps(limit = 50) {
+export async function getPendingOps(input = 50) {
+  const { limit, tenantId, userId } = normalizePendingQueryInput(input, 50);
   const raw = await AsyncStorage.getItem(WEB_PENDING_OPS_KEY);
   const list = raw ? JSON.parse(raw) : [];
   return list
     .filter(
       (op) =>
         (op.status === 'PENDING' || op.status === 'FAILED') &&
-        !String(op.lastError || '').startsWith('NO_RETRY:'),
+        !String(op.lastError || '').startsWith('NO_RETRY:') &&
+        (!tenantId || op.tenantId === tenantId) &&
+        (!userId || op.userId === userId),
     )
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     .slice(0, limit);
@@ -215,7 +245,18 @@ export async function updatePendingOpPayload(opId, payload) {
             payload: payload || {},
             updatedAt: new Date().toISOString(),
           }
-        : op,
+      : op,
     ),
   );
+}
+
+export async function clearOfflineOperationalData() {
+  await AsyncStorage.removeItem(WEB_PENDING_KEY);
+  await AsyncStorage.removeItem(WEB_PENDING_OPS_KEY);
+
+  const allKeys = await AsyncStorage.getAllKeys();
+  const syncKeys = allKeys.filter((key) => key.startsWith('sync_state_'));
+  if (syncKeys.length > 0) {
+    await AsyncStorage.multiRemove(syncKeys);
+  }
 }
