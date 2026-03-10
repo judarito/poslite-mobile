@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import { listBatches, listLocations } from '../services/inventoryCatalog.service';
 
 const ALERT_FILTERS = ['', 'EXPIRED', 'CRITICAL', 'WARNING', 'OK'];
+const ALERT_FILTER_LABELS = {
+  EXPIRED: 'Vencidos',
+  CRITICAL: 'Critico',
+  WARNING: 'Advertencia',
+  OK: 'OK',
+};
 
 function calcAlert(expirationDate) {
   if (!expirationDate) return { label: 'Sin vencimiento', color: '#64748b' };
@@ -62,88 +69,40 @@ export default function BatchesScreen({ tenant, offlineMode, pageSize = 20 }) {
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          <Pressable
-            style={[
-              styles.filterChip,
-              isLightTheme && styles.filterChipLight,
-              !filters?.location_id && styles.filterChipActive,
-              !filters?.location_id && isLightTheme && styles.filterChipActiveLight,
-            ]}
-            onPress={() => updateFilters({ location_id: '' })}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                isLightTheme && styles.filterChipTextLight,
-                !filters?.location_id && styles.filterChipTextActive,
-                !filters?.location_id && isLightTheme && styles.filterChipTextActiveLight,
-              ]}
-            >
-              Todas sedes
-            </Text>
-          </Pressable>
-          {locations.map((loc) => {
-            const active = filters?.location_id === loc.location_id;
-            return (
-              <Pressable
-                key={loc.location_id}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ location_id: loc.location_id })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {loc.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Sede"
+          themeMode={themeMode}
+          valueLabel="Todas las sedes"
+          clearLabel="Todas las sedes"
+          placeholder="Todas las sedes"
+          searchPlaceholder="Buscar sede..."
+          options={(locations || []).map((loc) => ({
+            key: loc.location_id,
+            label: loc.name,
+            searchText: loc.name,
+          }))}
+          selectedKey={filters?.location_id || ''}
+          onSelect={(nextValue) => updateFilters({ location_id: nextValue || '' })}
+        />
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          {ALERT_FILTERS.map((level) => {
-            const active = (filters?.alert_level || '') === level;
-            const label = level || 'Todos';
-            return (
-              <Pressable
-                key={label}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ alert_level: level })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Nivel de alerta"
+          themeMode={themeMode}
+          valueLabel="Todos"
+          clearLabel="Todos"
+          placeholder="Todos"
+          searchPlaceholder="Buscar nivel..."
+          options={ALERT_FILTERS.filter(Boolean).map((level) => ({
+            key: level,
+            label: ALERT_FILTER_LABELS[level] || level,
+          }))}
+          selectedKey={filters?.alert_level || ''}
+          onSelect={(nextValue) => updateFilters({ alert_level: nextValue || '' })}
+        />
+      </View>
 
       <PaginatedList
         themeMode={themeMode}
@@ -191,8 +150,9 @@ export default function BatchesScreen({ tenant, offlineMode, pageSize = 20 }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -203,13 +163,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,

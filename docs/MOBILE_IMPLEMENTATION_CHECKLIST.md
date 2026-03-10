@@ -1,6 +1,6 @@
 # Mobile Implementation Checklist
 
-Fecha de corte: 2026-03-07
+Fecha de corte: 2026-03-10
 Proyecto: POSLite Mobile (React Native + Expo)
 
 ## 1. Base tecnica
@@ -20,6 +20,7 @@ Proyecto: POSLite Mobile (React Native + Expo)
 - [x] Plan Separe.
 - [x] Cartera.
 - [x] Terceros (clientes/proveedores).
+- [x] Alias de navegacion: Clientes (`Customers`) y Proveedores (`Suppliers`) sobre Terceros.
 - [x] Productos.
 - [x] Categorias.
 - [x] Unidades de medida.
@@ -35,6 +36,7 @@ Proyecto: POSLite Mobile (React Native + Expo)
 - [x] Metodos de pago.
 - [x] Reportes (ventas/caja/inventario/financiero/produccion).
 - [x] Configuracion general (`Setup`) y Empresa (`TenantConfig`).
+- [x] Alias de navegacion: Gestion Empresa (`TenantManagement`) sobre `TenantConfig`.
 - [x] Sedes (`Locations`).
 - [x] Impuestos (`Taxes`).
 - [x] Acerca de (`About`).
@@ -102,6 +104,9 @@ Proyecto: POSLite Mobile (React Native + Expo)
 - [x] `PricingRules` migrado: `src/screens/PricingRulesScreen.js` + `src/services/pricingRules.service.js`.
 - [x] `Users` migrado: `src/screens/UsersScreen.js` + `src/services/users.service.js`.
 - [x] `RolesMenus` migrado: `src/screens/RolesMenusScreen.js` + `src/services/rolesMenus.service.js`.
+- [x] Tema centralizado por tokens:
+  - `src/theme/colors.js` con `APP_THEME_COLORS`, `COMPONENT_THEME_COLORS`, `SCREEN_ACCENT_COLORS`.
+  - `src/components/*` migrado para evitar colores hardcode.
 
 ## 7. Criterios de codigo limpio (DoD tecnico)
 

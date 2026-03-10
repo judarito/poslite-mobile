@@ -6,10 +6,10 @@ import {
   AppState,
   Appearance,
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   Pressable,
-  Switch,
   StatusBar as RNStatusBar,
   SafeAreaView,
   ScrollView,
@@ -31,12 +31,20 @@ import {
   saveMenuCache,
   saveAuthCache,
 } from './src/storage/sqlite/database';
-import { annotateMenuTreeWithSupport } from './src/navigation/menuMapper';
+import {
+  annotateMenuTreeWithSupport,
+  canAccessPathByMenu,
+  collectAllowedMenuRoutes,
+  collectAllowedMobileScreens,
+  collectMenuScreenRouteHints,
+  normalizeMenuRoute,
+} from './src/navigation/menuMapper';
 import {
   getMobileAppBarTitle,
   isMobileScreenSupported,
   resolveReportsInitialTab,
 } from './src/navigation/mobileScreenConfig';
+import { APP_THEME_COLORS, HOME_BAR_THEME_COLORS, SCREEN_ACCENT_COLORS } from './src/theme/colors';
 import { fetchUserMenus, isFreshCache } from './src/services/menu.service';
 import { getDashboardSummary } from './src/services/reports.service';
 import { syncPendingOperations } from './src/services/sync.service';
@@ -86,6 +94,7 @@ import ProductionOrdersScreen from './src/screens/ProductionOrdersScreen';
 import ProductsScreen from './src/screens/ProductsScreen';
 import PurchasesScreen from './src/screens/PurchasesScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
+import AIInsightsScreen from './src/screens/AIInsightsScreen';
 import SalesHistoryScreen from './src/screens/SalesHistoryScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SetupScreen from './src/screens/SetupScreen';
@@ -115,6 +124,86 @@ function isJwtSessionError(error) {
   );
 }
 
+const SCREEN_ICON_MAP = {
+  Home: 'home-outline',
+  PointOfSale: 'cart-outline',
+  Sales: 'receipt-outline',
+  Layaway: 'wallet-outline',
+  ThirdParties: 'people-outline',
+  Customers: 'people-outline',
+  Suppliers: 'briefcase-outline',
+  Cartera: 'card-outline',
+  Products: 'cube-outline',
+  Categories: 'grid-outline',
+  Units: 'scale-outline',
+  BulkImports: 'cloud-upload-outline',
+  Inventory: 'layers-outline',
+  Batches: 'albums-outline',
+  Purchases: 'bag-handle-outline',
+  ProductionOrders: 'construct-outline',
+  BOMs: 'build-outline',
+  CashSessions: 'cash-outline',
+  CashRegisters: 'calculator-outline',
+  CashAssignments: 'person-add-outline',
+  PaymentMethods: 'wallet-outline',
+  Reports: 'bar-chart-outline',
+  AIInsights: 'sparkles-outline',
+  Setup: 'settings-outline',
+  TenantConfig: 'business-outline',
+  TenantManagement: 'business-outline',
+  Locations: 'location-outline',
+  Taxes: 'pricetag-outline',
+  TaxRules: 'document-text-outline',
+  PricingRules: 'trending-up-outline',
+  Users: 'person-outline',
+  RolesMenus: 'shield-checkmark-outline',
+  About: 'information-circle-outline',
+};
+
+const SCREEN_ACCENT_MAP = {
+  PointOfSale: SCREEN_ACCENT_COLORS.PointOfSale,
+  Sales: SCREEN_ACCENT_COLORS.Sales,
+  Inventory: SCREEN_ACCENT_COLORS.Inventory,
+  Reports: SCREEN_ACCENT_COLORS.Reports,
+  AIInsights: SCREEN_ACCENT_COLORS.Reports,
+  ThirdParties: SCREEN_ACCENT_COLORS.ThirdParties,
+  Customers: SCREEN_ACCENT_COLORS.ThirdParties,
+  Suppliers: SCREEN_ACCENT_COLORS.Products,
+  Products: SCREEN_ACCENT_COLORS.Products,
+  CashSessions: SCREEN_ACCENT_COLORS.CashSessions,
+  Setup: SCREEN_ACCENT_COLORS.Setup,
+  TenantManagement: SCREEN_ACCENT_COLORS.Setup,
+};
+
+function resolveMenuIcon(item) {
+  const target = String(item?.targetScreen || '').trim();
+  return SCREEN_ICON_MAP[target] || 'ellipse-outline';
+}
+
+function resolveMenuAccent(item) {
+  const target = String(item?.targetScreen || '').trim();
+  return SCREEN_ACCENT_MAP[target] || SCREEN_ACCENT_COLORS.fallback;
+}
+
+function extractInitials(name, fallback = 'U') {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return fallback;
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+}
+
+const HOME_BAR_COLORS = HOME_BAR_THEME_COLORS;
+const HOME_ACTION_LABELS = {
+  Products: 'Productos',
+  ThirdParties: 'Clientes',
+  Inventory: 'Inventario',
+  Reports: 'Reportes',
+};
+const ALWAYS_ALLOWED_SCREENS = new Set(['Home', 'About', 'AIInsights']);
+
 export default function App() {
   const androidTopInset = Platform.OS === 'android' ? RNStatusBar.currentHeight || 0 : 0;
 
@@ -125,6 +214,7 @@ export default function App() {
   const [offlineAvailable, setOfflineAvailable] = useState(false);
   const [cachedAt, setCachedAt] = useState('');
   const [pendingOpsCount, setPendingOpsCount] = useState(0);
+  const [rawMenuTree, setRawMenuTree] = useState([]);
   const [menuTree, setMenuTree] = useState([]);
   const [menuCachedAt, setMenuCachedAt] = useState('');
   const [loadingMenu, setLoadingMenu] = useState(false);
@@ -154,15 +244,48 @@ export default function App() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
+  const allowedMenuRoutes = useMemo(() => collectAllowedMenuRoutes(rawMenuTree), [rawMenuTree]);
+  const allowedMenuScreens = useMemo(() => collectAllowedMobileScreens(rawMenuTree), [rawMenuTree]);
+  const menuScreenRouteHints = useMemo(() => collectMenuScreenRouteHints(rawMenuTree), [rawMenuTree]);
+
+  const canAccessScreenByMenu = useCallback((screenName, routeHint = '') => {
+    const targetScreen = String(screenName || '').trim();
+    if (!targetScreen) return false;
+    if (ALWAYS_ALLOWED_SCREENS.has(targetScreen)) return true;
+
+    if (allowedMenuRoutes.length > 0) {
+      const normalizedHint = normalizeMenuRoute(routeHint);
+      if (normalizedHint && canAccessPathByMenu(normalizedHint, allowedMenuRoutes)) {
+        return true;
+      }
+      const screenRoutes = menuScreenRouteHints[targetScreen] || [];
+      return screenRoutes.some((candidateRoute) => canAccessPathByMenu(candidateRoute, allowedMenuRoutes));
+    }
+
+    if (allowedMenuScreens.length > 0) {
+      return allowedMenuScreens.includes(targetScreen);
+    }
+
+    return true;
+  }, [allowedMenuRoutes, allowedMenuScreens, menuScreenRouteHints]);
+
   const navigateToScreen = useCallback((nextScreen, options = {}) => {
-    const { reset = false } = options;
+    const { reset = false, routeHint = '', denyMessage = '' } = options;
     const target = String(nextScreen || '').trim();
-    if (!target) return;
+    if (!target) return false;
+
+    if (!reset && !canAccessScreenByMenu(target, routeHint)) {
+      setError(
+        denyMessage ||
+          `No tienes acceso al modulo "${getMobileAppBarTitle(target)}" con tu rol actual.`,
+      );
+      return false;
+    }
 
     if (reset) {
       setScreenHistory([]);
       setCurrentScreen(target);
-      return;
+      return true;
     }
 
     setCurrentScreen((prevScreen) => {
@@ -170,7 +293,8 @@ export default function App() {
       setScreenHistory((prevHistory) => [...prevHistory, prevScreen].slice(-50));
       return target;
     });
-  }, []);
+    return true;
+  }, [canAccessScreenByMenu]);
 
   const resetToHome = useCallback(() => {
     setScreenHistory([]);
@@ -201,6 +325,7 @@ export default function App() {
     setTopProducts([]);
     setPaymentMethodsSeries([]);
     setTenantSettings({});
+    setRawMenuTree([]);
     setMenuTree([]);
     setMenuCachedAt('');
     setExpandedSections({});
@@ -261,6 +386,7 @@ export default function App() {
           setCachedAt(cached.cachedAt);
         }
         if (cachedMenu && mounted) {
+          setRawMenuTree(Array.isArray(cachedMenu.menuTree) ? cachedMenu.menuTree : []);
           setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
           setMenuCachedAt(cachedMenu.cachedAt);
         }
@@ -323,11 +449,11 @@ export default function App() {
       const data = response?.notification?.request?.content?.data || {};
       const actionUrl = String(data?.action_url || '');
       if (actionUrl.includes('/reports')) {
-        navigateToScreen('Reports');
+        navigateToScreen('Reports', { routeHint: '/reports' });
       } else if (actionUrl.includes('/sales') || actionUrl.includes('/ventas')) {
-        navigateToScreen('Sales');
+        navigateToScreen('Sales', { routeHint: '/sales' });
       } else if (actionUrl.includes('/point-of-sale') || actionUrl.includes('/pos')) {
-        navigateToScreen('PointOfSale');
+        navigateToScreen('PointOfSale', { routeHint: '/pos' });
       }
     });
 
@@ -493,21 +619,83 @@ export default function App() {
     return () => sub.remove();
   }, [session, offlineMode, menuOpen, notificationsOpen, currentScreen, goBack]);
 
+  useEffect(() => {
+    if (ALWAYS_ALLOWED_SCREENS.has(currentScreen)) return;
+    if (canAccessScreenByMenu(currentScreen)) return;
+    setError(`Tu rol actual no tiene acceso a "${getMobileAppBarTitle(currentScreen)}".`);
+    resetToHome();
+    setMenuOpen(false);
+  }, [currentScreen, canAccessScreenByMenu, resetToHome]);
+
   const userEmail = useMemo(() => session?.user?.email ?? '', [session]);
-  const rolesText = useMemo(() => {
-    const names = (userProfile?.roles || []).map((r) => r.name).filter(Boolean);
-    return names.length ? names.join(', ') : 'Sin roles';
-  }, [userProfile]);
-  const menuItemsCount = useMemo(() => {
-    return (menuTree || []).reduce((acc, section) => acc + 1 + (section.children?.length || 0), 0);
+  const homeQuickActions = useMemo(() => {
+    const flat = [];
+    (menuTree || []).forEach((section) => {
+      if (section.supportedOnMobile && section.targetScreen && section.targetScreen !== 'Home') {
+        flat.push({
+          code: section.code || section.targetScreen,
+          label: section.label || section.title || section.targetScreen,
+          targetScreen: section.targetScreen,
+          route: section.route || '',
+        });
+      }
+      (section.children || []).forEach((child) => {
+        if (!child.supportedOnMobile || !child.targetScreen || child.targetScreen === 'Home') return;
+        flat.push({
+          code: child.code || child.targetScreen,
+          label: child.label || child.title || child.targetScreen,
+          targetScreen: child.targetScreen,
+          route: child.route || '',
+        });
+      });
+    });
+
+    const unique = [];
+    const seen = new Set();
+    flat.forEach((item) => {
+      const key = `${item.targetScreen}:${item.route}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(item);
+    });
+    return unique.slice(0, 12);
   }, [menuTree]);
-  const supportedMenuItemsCount = useMemo(() => {
-    return (menuTree || []).reduce((acc, section) => {
-      const selfSupported = section.supportedOnMobile ? 1 : 0;
-      const childrenSupported = (section.children || []).filter((child) => child.supportedOnMobile).length;
-      return acc + selfSupported + childrenSupported;
-    }, 0);
-  }, [menuTree]);
+  const homePrimaryActions = useMemo(() => {
+    const preferredTargets = ['Products', 'ThirdParties', 'Inventory', 'Reports'];
+    const byTarget = new Map();
+    homeQuickActions.forEach((item) => {
+      if (!item?.targetScreen || byTarget.has(item.targetScreen)) return;
+      byTarget.set(item.targetScreen, item);
+    });
+
+    const prioritized = preferredTargets
+      .map((target) => byTarget.get(target))
+      .filter(Boolean);
+
+    if (prioritized.length >= 4) return prioritized.slice(0, 4);
+
+    const used = new Set(prioritized.map((item) => `${item.targetScreen}:${item.route || ''}`));
+    homeQuickActions.forEach((item) => {
+      const key = `${item.targetScreen}:${item.route || ''}`;
+      if (used.has(key)) return;
+      if (prioritized.length >= 4) return;
+      used.add(key);
+      prioritized.push(item);
+    });
+
+    return prioritized.slice(0, 4);
+  }, [homeQuickActions]);
+  const homeLast7Series = useMemo(() => (dailySeries || []).slice(-7), [dailySeries]);
+  const homeMaxDaily = useMemo(() => {
+    if (!homeLast7Series.length) return 1;
+    return Math.max(...homeLast7Series.map((entry) => Number(entry?.total || 0)), 1);
+  }, [homeLast7Series]);
+  const monthVsPrev = Number(kpis?.month?.vs_prev || 0);
+  const todayVsPrev = Number(kpis?.today?.vs_prev || 0);
+  const profileInitials = useMemo(
+    () => extractInitials(userProfile?.full_name || userEmail || 'U'),
+    [userProfile?.full_name, userEmail],
+  );
   const formatMoney = (value) => {
     const currency = tenant?.currency_code || 'COP';
     const amount = Number(value || 0);
@@ -540,6 +728,7 @@ export default function App() {
       isFreshCache(cachedMenu.cachedAt)
     ) {
       const annotated = annotateMenuTreeWithSupport(cachedMenu.menuTree);
+      setRawMenuTree(Array.isArray(cachedMenu.menuTree) ? cachedMenu.menuTree : []);
       setMenuTree(annotated);
       setMenuCachedAt(cachedMenu.cachedAt);
       return annotated;
@@ -549,6 +738,7 @@ export default function App() {
     try {
       const { tree } = await fetchUserMenus(authUserId);
       const annotated = annotateMenuTreeWithSupport(tree);
+      setRawMenuTree(Array.isArray(tree) ? tree : []);
       setMenuTree(annotated);
       const now = new Date().toISOString();
       setMenuCachedAt(now);
@@ -557,6 +747,7 @@ export default function App() {
     } catch (menuError) {
       if (cachedMenu?.authUserId === authUserId && Array.isArray(cachedMenu.menuTree)) {
         const annotated = annotateMenuTreeWithSupport(cachedMenu.menuTree);
+        setRawMenuTree(Array.isArray(cachedMenu.menuTree) ? cachedMenu.menuTree : []);
         setMenuTree(annotated);
         setMenuCachedAt(cachedMenu.cachedAt);
         return annotated;
@@ -790,7 +981,11 @@ export default function App() {
       if (item.targetScreen === 'Reports') {
         setReportsInitialTab(resolveReportsInitialTab(item.route));
       }
-      navigateToScreen(item.targetScreen);
+      const didNavigate = navigateToScreen(item.targetScreen, {
+        routeHint: item.route,
+        denyMessage: `No tienes acceso a "${item.label || item.title}" con tu rol actual.`,
+      });
+      if (!didNavigate) return;
       setLastMenuAction('');
       setMenuOpen(false);
       return;
@@ -898,6 +1093,7 @@ export default function App() {
       try {
         await loadMenusForUser(authUserId, { preferFreshCache: true });
       } catch (menuError) {
+        setRawMenuTree([]);
         setMenuTree([]);
         setMenuCachedAt('');
         setError(
@@ -916,6 +1112,7 @@ export default function App() {
       setTenant(null);
       setKpis(null);
       setTenantSettings({});
+      setRawMenuTree([]);
       setMenuTree([]);
       setMenuCachedAt('');
       setError(e?.message ?? 'No fue posible cargar el perfil.');
@@ -1074,6 +1271,7 @@ export default function App() {
       setTopProducts([]);
       setPaymentMethodsSeries([]);
       setTenantSettings({});
+      setRawMenuTree([]);
       resetToHome();
       setReportsInitialTab('sales');
       setMenuTree([]);
@@ -1105,6 +1303,7 @@ export default function App() {
     setDailySeries([]);
     setTopProducts([]);
     setPaymentMethodsSeries([]);
+    setRawMenuTree([]);
     resetToHome();
     setReportsInitialTab('sales');
     setMenuTree([]);
@@ -1139,9 +1338,11 @@ export default function App() {
     resetToHome();
     setCachedAt(cached.cachedAt);
     if (cachedMenu?.menuTree) {
+      setRawMenuTree(Array.isArray(cachedMenu.menuTree) ? cachedMenu.menuTree : []);
       setMenuTree(annotateMenuTreeWithSupport(cachedMenu.menuTree));
       setMenuCachedAt(cachedMenu.cachedAt);
     } else {
+      setRawMenuTree([]);
       setMenuTree([]);
       setMenuCachedAt('');
     }
@@ -1165,6 +1366,7 @@ export default function App() {
     setOfflineAvailable(false);
     setCachedAt('');
     setTenantSettings({});
+    setRawMenuTree([]);
     setMenuTree([]);
     setMenuCachedAt('');
     resetToHome();
@@ -1184,7 +1386,7 @@ export default function App() {
     return (
       <ThemeModeProvider mode={themeMode}>
         <SafeAreaView style={styles.centered}>
-          <ActivityIndicator size="large" color="#2563eb" />
+          <ActivityIndicator size="large" color={SCREEN_ACCENT_COLORS.Sales} />
           <Text style={styles.loadingText}>Inicializando app offline-first...</Text>
           <StatusBar style="auto" />
         </SafeAreaView>
@@ -1214,33 +1416,50 @@ export default function App() {
     );
   }
 
-  const isLocalLightMode = themeMode === 'light';
-
   return (
     <ThemeModeProvider mode={themeMode}>
       <SafeAreaView style={isLightTheme ? styles.root : styles.rootDark}>
+      <View
+        pointerEvents="none"
+        style={[styles.brandGlowTop, isLightTheme ? styles.brandGlowTopLight : null]}
+      />
+      <View
+        pointerEvents="none"
+        style={[styles.brandGlowBottom, isLightTheme ? styles.brandGlowBottomLight : null]}
+      />
       <View
         style={[
           styles.appBar,
           isLightTheme ? styles.appBarLight : null,
           {
             paddingTop: androidTopInset,
-            height: 56 + androidTopInset,
+            height: 68 + androidTopInset,
           },
         ]}
       >
-        <Pressable onPress={() => setMenuOpen(true)} style={styles.menuTrigger}>
-          <Text style={styles.menuTriggerText}>☰</Text>
-        </Pressable>
-        <Text style={[styles.appBarTitle, isLightTheme ? styles.appBarTitleLight : null]}>
-          {getMobileAppBarTitle(currentScreen)}
-        </Text>
+        <View style={styles.appBarLeft}>
+          <Pressable onPress={() => setMenuOpen(true)} style={[styles.menuTrigger, isLightTheme ? styles.menuTriggerLight : null]}>
+            <Ionicons name="menu" size={18} style={[styles.menuTriggerText, isLightTheme ? styles.menuTriggerTextLight : null]} />
+          </Pressable>
+          <View style={styles.appBrandLogoWrap}>
+            <Image source={require('./assets/ofirone-mark-web.png')} style={styles.appBrandLogo} resizeMode="contain" />
+          </View>
+          <View style={styles.appBrandTextWrap}>
+            <Text numberOfLines={1} style={styles.brandWordmark}>
+              <Text style={[styles.brandWordmarkOfir, isLightTheme ? styles.brandWordmarkOfirLight : null]}>Ofir</Text>
+              <Text style={[styles.brandWordmarkOne, isLightTheme ? styles.brandWordmarkOneLight : null]}>One</Text>
+            </Text>
+            <Text numberOfLines={1} style={[styles.appBarTitle, isLightTheme ? styles.appBarTitleLight : null]}>
+              {getMobileAppBarTitle(currentScreen)}
+            </Text>
+          </View>
+        </View>
         <View style={styles.appBarRight}>
           <Pressable
             onPress={handleOpenNotifications}
             style={[styles.notificationsBtn, isLightTheme ? styles.notificationsBtnLight : null]}
           >
-            <Text style={[styles.notificationsBtnText, isLightTheme ? styles.notificationsBtnTextLight : null]}>🔔</Text>
+            <Ionicons name="notifications-outline" size={17} style={[styles.notificationsBtnText, isLightTheme ? styles.notificationsBtnTextLight : null]} />
             {unreadNotifications > 0 ? (
               <View style={styles.notificationsBadge}>
                 <Text style={styles.notificationsBadgeText}>
@@ -1249,24 +1468,42 @@ export default function App() {
               </View>
             ) : null}
           </Pressable>
+          <Pressable
+            onPress={() => handleLocalThemeChange(isLightTheme ? 'dark' : 'light')}
+            style={[styles.themeToggleBtn, isLightTheme ? styles.themeToggleBtnLight : null]}
+          >
+            <Ionicons
+              name={isLightTheme ? 'moon-outline' : 'sunny-outline'}
+              size={16}
+              style={[styles.themeToggleIcon, isLightTheme ? styles.themeToggleIconLight : null]}
+            />
+          </Pressable>
           <View style={[styles.connectionChip, offlineMode ? styles.connectionChipOffline : styles.connectionChipOnline]}>
             <Text style={[styles.connectionDot, offlineMode ? styles.connectionDotOffline : styles.connectionDotOnline]}>
               ●
             </Text>
-            <Text style={styles.connectionChipText}>
+            <Text style={[styles.connectionChipText, offlineMode ? styles.connectionChipTextOffline : styles.connectionChipTextOnline]}>
               {offlineMode ? `Offline · ${pendingOpsCount}` : 'Online'}
             </Text>
           </View>
           {currentScreen !== 'Home' ? (
-            <Pressable onPress={goBack} style={[styles.appBarBackBtn, isLightTheme ? styles.appBarBackBtnLight : null]}>
+            <Pressable
+              onPress={goBack}
+              hitSlop={8}
+              style={[styles.appBarBackBtn, isLightTheme ? styles.appBarBackBtnLight : null]}
+            >
               <Ionicons
                 name="chevron-back"
-                size={14}
+                size={18}
                 style={[styles.appBarBackIcon, isLightTheme ? styles.appBarBackIconLight : null]}
               />
-              <Text style={[styles.appBarBackText, isLightTheme ? styles.appBarBackTextLight : null]}>Atras</Text>
             </Pressable>
           ) : null}
+          <View style={[styles.appBarAvatar, isLightTheme ? styles.appBarAvatarLight : null]}>
+            <Text style={[styles.appBarAvatarText, isLightTheme ? styles.appBarAvatarTextLight : null]}>
+              {profileInitials}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -1275,7 +1512,13 @@ export default function App() {
           <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)} />
           <View style={[styles.menuDrawer, isLightTheme ? null : styles.menuDrawerDark]}>
             <View style={[styles.menuHeader, isLightTheme ? null : styles.menuHeaderDark]}>
-              <Text style={[styles.menuHeaderTitle, isLightTheme ? null : styles.menuHeaderTitleDark]}>Menu</Text>
+              <View style={styles.menuHeaderBrand}>
+                <Image source={require('./assets/ofirone-mark-web.png')} style={styles.menuHeaderLogo} resizeMode="contain" />
+                <Text style={styles.menuHeaderWordmark}>
+                  <Text style={[styles.brandWordmarkOfir, isLightTheme ? styles.brandWordmarkOfirLight : null]}>Ofir</Text>
+                  <Text style={[styles.brandWordmarkOne, isLightTheme ? styles.brandWordmarkOneLight : null]}>One</Text>
+                </Text>
+              </View>
               <Pressable onPress={() => setMenuOpen(false)} style={[styles.menuCloseBtn, isLightTheme ? null : styles.menuCloseBtnDark]}>
                 <Text style={[styles.menuCloseText, isLightTheme ? null : styles.menuCloseTextDark]}>Cerrar</Text>
               </Pressable>
@@ -1291,11 +1534,30 @@ export default function App() {
                 const code = section.code || section.title;
                 const hasChildren = Boolean(section.children?.length);
                 const isExpanded = Boolean(expandedSections[code]);
+                const sectionRoleAllowed = section.targetScreen
+                  ? canAccessScreenByMenu(section.targetScreen, section.route)
+                  : true;
+                const hasEnabledChild = hasChildren
+                  ? (section.children || []).some((child) => {
+                      const childUnsupported = !child.supportedOnMobile && !child.action;
+                      if (childUnsupported) return false;
+                      if (!child.targetScreen) return true;
+                      return canAccessScreenByMenu(child.targetScreen, child.route);
+                    })
+                  : false;
+                const sectionDisabled = hasChildren
+                  ? !sectionRoleAllowed && !hasEnabledChild
+                  : !sectionRoleAllowed;
 
                 return (
                   <View key={code} style={styles.menuSection}>
                     <Pressable
-                      style={[styles.menuSectionBtn, isLightTheme ? null : styles.menuSectionBtnDark]}
+                      disabled={sectionDisabled}
+                      style={[
+                        styles.menuSectionBtn,
+                        isLightTheme ? null : styles.menuSectionBtnDark,
+                        sectionDisabled ? styles.menuSectionBtnDisabled : null,
+                      ]}
                       onPress={() => {
                         if (hasChildren) {
                           toggleSection(code);
@@ -1304,35 +1566,89 @@ export default function App() {
                         handleMenuAction(section);
                       }}
                     >
-                      <Text style={[styles.menuSectionText, isLightTheme ? null : styles.menuSectionTextDark]}>{section.label || section.title}</Text>
-                      {hasChildren ? (
+                      <View style={styles.menuSectionLeft}>
+                        <View
+                          style={[
+                            styles.menuIconBadge,
+                            sectionDisabled ? styles.menuIconBadgeDisabled : null,
+                            {
+                              backgroundColor: `${resolveMenuAccent(section)}22`,
+                              borderColor: `${resolveMenuAccent(section)}66`,
+                            },
+                          ]}
+                        >
+                          <Ionicons name={resolveMenuIcon(section)} size={14} color={resolveMenuAccent(section)} />
+                        </View>
+                        <Text
+                          style={[
+                            styles.menuSectionText,
+                            isLightTheme ? null : styles.menuSectionTextDark,
+                            sectionDisabled ? styles.menuSectionTextDisabled : null,
+                          ]}
+                        >
+                          {section.label || section.title}
+                        </Text>
+                      </View>
+                      {hasChildren && !sectionDisabled ? (
                         <Text style={[styles.menuChevron, isLightTheme ? null : styles.menuChevronDark]}>{isExpanded ? '−' : '+'}</Text>
+                      ) : sectionDisabled ? (
+                        <Ionicons name="lock-closed-outline" size={13} style={styles.menuLockedIcon} />
                       ) : null}
                     </Pressable>
 
                     {hasChildren && isExpanded ? (
                       <View style={styles.menuChildren}>
-                        {section.children.map((child) => (
-                          <Pressable
-                            key={child.code || child.title}
-                            onPress={() => handleMenuAction(child)}
-                            style={[
-                              styles.menuChildBtn,
-                              isLightTheme ? null : styles.menuChildBtnDark,
-                              !child.supportedOnMobile && !child.action && styles.menuChildBtnDisabled,
-                            ]}
-                          >
-                            <Text
+                        {section.children.map((child) => {
+                          const childUnsupported = !child.supportedOnMobile && !child.action;
+                          const childRoleBlocked = Boolean(child.targetScreen) &&
+                            !canAccessScreenByMenu(child.targetScreen, child.route);
+                          const childDisabled = childUnsupported || childRoleBlocked;
+
+                          return (
+                            <Pressable
+                              key={child.code || child.title}
+                              disabled={childDisabled}
+                              onPress={() => handleMenuAction(child)}
                               style={[
-                                styles.menuChildText,
-                                isLightTheme ? null : styles.menuChildTextDark,
-                                !child.supportedOnMobile && !child.action && styles.menuChildTextDisabled,
+                                styles.menuChildBtn,
+                                isLightTheme ? null : styles.menuChildBtnDark,
+                                childDisabled && styles.menuChildBtnDisabled,
                               ]}
                             >
-                              {child.label || child.title}
-                            </Text>
-                          </Pressable>
-                        ))}
+                              <View
+                                style={[
+                                  styles.menuIconBadge,
+                                  styles.menuChildIconBadge,
+                                  childDisabled ? styles.menuIconBadgeDisabled : null,
+                                  {
+                                    backgroundColor: `${resolveMenuAccent(child)}20`,
+                                    borderColor: `${resolveMenuAccent(child)}55`,
+                                  },
+                                ]}
+                              >
+                                <Ionicons name={resolveMenuIcon(child)} size={13} color={resolveMenuAccent(child)} />
+                              </View>
+                              <Text
+                                style={[
+                                  styles.menuChildText,
+                                  isLightTheme ? null : styles.menuChildTextDark,
+                                  childDisabled && styles.menuChildTextDisabled,
+                                ]}
+                              >
+                                {child.label || child.title}
+                              </Text>
+                              {childDisabled ? (
+                                <Ionicons name="lock-closed-outline" size={13} style={styles.menuLockedIcon} />
+                              ) : (
+                                <Ionicons
+                                  name="chevron-forward"
+                                  size={14}
+                                  style={[styles.menuChildChevron, isLightTheme ? styles.menuChildChevronLight : null]}
+                                />
+                              )}
+                            </Pressable>
+                          );
+                        })}
                       </View>
                     ) : null}
                   </View>
@@ -1455,6 +1771,24 @@ export default function App() {
           offlineMode={offlineMode}
           pageSize={defaultPageSize}
         />
+      ) : currentScreen === 'Customers' ? (
+        <ThirdPartiesScreen
+          tenant={tenant}
+          themeMode={themeMode}
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
+          forcedType="customer"
+          title="Clientes"
+        />
+      ) : currentScreen === 'Suppliers' ? (
+        <ThirdPartiesScreen
+          tenant={tenant}
+          themeMode={themeMode}
+          offlineMode={offlineMode}
+          pageSize={defaultPageSize}
+          forcedType="supplier"
+          title="Proveedores"
+        />
       ) : currentScreen === 'Cartera' ? (
         <CarteraScreen
           tenant={tenant}
@@ -1562,9 +1896,22 @@ export default function App() {
           formatMoney={formatMoney}
           initialTab={reportsInitialTab}
         />
+      ) : currentScreen === 'AIInsights' ? (
+        <AIInsightsScreen
+          tenant={tenant}
+          themeMode={themeMode}
+          offlineMode={offlineMode}
+        />
       ) : currentScreen === 'Setup' ? (
         <SetupScreen onOpenScreen={navigateToScreen} themeMode={themeMode} />
       ) : currentScreen === 'TenantConfig' ? (
+        <TenantConfigScreen
+          tenant={tenant}
+          offlineMode={offlineMode}
+          themeMode={themeMode}
+          onLocalThemeChange={handleLocalThemeChange}
+        />
+      ) : currentScreen === 'TenantManagement' ? (
         <TenantConfigScreen
           tenant={tenant}
           offlineMode={offlineMode}
@@ -1607,229 +1954,194 @@ export default function App() {
       ) : currentScreen === 'About' ? (
         <AboutScreen tenant={tenant} userProfile={userProfile} themeMode={themeMode} offlineMode={offlineMode} />
       ) : (
-        <ScrollView contentContainerStyle={[styles.homeScrollDark, isLightTheme && styles.homeScrollLight]}>
-          <View style={styles.homeWrap}>
-          <Text style={[styles.homeTitleDark, isLightTheme && styles.homeTitleLight]}>Inicio</Text>
-          <Text style={[styles.homeSubtitleDark, isLightTheme && styles.homeSubtitleLight]}>
-            {tenant?.tenant_name || 'Sin tenant'} · {tenant?.currency_code || '-'}
-          </Text>
-
-          <View style={styles.statusRowDark}>
-            <Text style={[styles.statusTextDark, isLightTheme && styles.statusTextLight]}>
-              {offlineMode ? 'Offline activo' : 'Online'} · {loadingMenu ? 'Menu cargando' : 'Menu listo'}
-            </Text>
-          </View>
-
-          <View style={[styles.themeSwitchCard, isLightTheme && styles.themeSwitchCardLight]}>
-            <View style={styles.themeSwitchTextWrap}>
-              <Text style={[styles.themeSwitchTitle, isLightTheme && styles.themeSwitchTitleLight]}>
-                Tema local
-              </Text>
-              <Text style={[styles.themeSwitchSubtitle, isLightTheme && styles.themeSwitchSubtitleLight]}>
-                Se guarda en cache del dispositivo para tu usuario
+        <View style={styles.homeScreenContainer}>
+          <ScrollView contentContainerStyle={[styles.homeScrollDark, styles.homeScrollWithDock, isLightTheme && styles.homeScrollLight]}>
+            <View style={styles.homeWrap}>
+            <View style={[styles.mobileMetricMainCard, isLightTheme && styles.mobileMetricMainCardLight]}>
+              <View style={styles.mobileMetricMainLeft}>
+                <Image source={require('./assets/ofirone-mark-web.png')} style={styles.mobileMetricMainLogo} resizeMode="contain" />
+                <View style={styles.mobileMetricMainTextWrap}>
+                  <Text style={[styles.mobileMetricTitle, isLightTheme && styles.mobileMetricTitleLight]}>Ventas Hoy</Text>
+                  <Text style={[styles.mobileMetricMainAmount, isLightTheme && styles.mobileMetricMainAmountLight]}>
+                    {loadingKpis ? '...' : formatMoney(kpis?.today?.total || 0)}
+                  </Text>
+                </View>
+              </View>
+              <Text style={todayVsPrev >= 0 ? styles.mobileTrendUp : styles.mobileTrendDown}>
+                {loadingKpis ? '...' : `${todayVsPrev >= 0 ? '↗' : '↘'} ${Math.abs(todayVsPrev || 0).toFixed(0)}%`}
               </Text>
             </View>
-            <View style={styles.themeSwitchControlWrap}>
-              <Text style={[styles.themeSwitchMode, isLightTheme && styles.themeSwitchModeLight]}>
-                {isLocalLightMode ? 'Claro' : 'Oscuro'}
-              </Text>
-              <Switch
-                value={isLocalLightMode}
-                onValueChange={(enabled) => handleLocalThemeChange(enabled ? 'light' : 'dark')}
-                thumbColor={isLocalLightMode ? '#ffffff' : '#e2e8f0'}
-                trackColor={{ false: '#64748b', true: '#38bdf8' }}
-              />
-            </View>
-          </View>
 
-          <Pressable
-            onPress={() => navigateToScreen('PointOfSale')}
-            style={[styles.quickSaleBtn, isLightTheme && styles.quickSaleBtnLight]}
-          >
-            <View style={styles.quickSaleContent}>
-              <View style={[styles.quickSaleIconWrap, isLightTheme && styles.quickSaleIconWrapLight]}>
+            <View style={[styles.mobileMetricCard, isLightTheme && styles.mobileMetricCardLight]}>
+              <View style={styles.mobileMetricRow}>
+                <View style={[styles.mobileMetricIconWrap, isLightTheme && styles.mobileMetricIconWrapLight]}>
+                  <Ionicons name="briefcase-outline" size={18} style={styles.mobileMetricIconGold} />
+                </View>
+                <View style={styles.mobileMetricTextWrap}>
+                  <Text style={[styles.mobileMetricTitle, isLightTheme && styles.mobileMetricTitleLight]}>Este Mes</Text>
+                  <Text style={[styles.mobileMetricAmount, isLightTheme && styles.mobileMetricAmountLight]}>
+                    {loadingKpis ? '...' : formatMoney(kpis?.month?.total || 0)}
+                  </Text>
+                </View>
+                <Text style={monthVsPrev >= 0 ? styles.mobileTrendUp : styles.mobileTrendDown}>
+                  {loadingKpis ? '...' : `${monthVsPrev >= 0 ? '↗' : '↘'} ${Math.abs(monthVsPrev || 0).toFixed(0)}%`}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.mobileMetricCard, styles.mobileMetricThinCard, isLightTheme && styles.mobileMetricCardLight]}>
+              <View style={styles.mobileMetricRow}>
+                <View style={[styles.mobileMetricIconWrap, isLightTheme && styles.mobileMetricIconWrapLight]}>
+                  <Ionicons name="bar-chart-outline" size={18} style={styles.mobileMetricIconBlue} />
+                </View>
+                <Text style={[styles.mobileMetricTitle, isLightTheme && styles.mobileMetricTitleLight]}>Este Año</Text>
+                <Text style={[styles.mobileMetricAmount, isLightTheme && styles.mobileMetricAmountLight]}>
+                  {loadingKpis ? '...' : formatMoney(kpis?.year?.total || 0)}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => navigateToScreen('PointOfSale', { routeHint: '/pos' })}
+              style={[styles.quickSaleBtn, isLightTheme && styles.quickSaleBtnLight]}
+            >
+              <View style={styles.quickSaleContent}>
+                <View style={[styles.quickSaleIconWrap, isLightTheme && styles.quickSaleIconWrapLight]}>
+                  <Ionicons
+                    name="storefront-outline"
+                    size={20}
+                    style={[styles.quickSaleIcon, isLightTheme && styles.quickSaleIconLight]}
+                  />
+                </View>
+                <View style={styles.quickSaleTextWrap}>
+                  <Text style={[styles.quickSaleBtnText, isLightTheme && styles.quickSaleBtnTextLight]}>
+                    Nueva Venta
+                  </Text>
+                  <Text style={[styles.quickSaleHint, isLightTheme && styles.quickSaleHintLight]}>
+                    Registrar pedido, pago y factura
+                  </Text>
+                </View>
                 <Ionicons
-                  name="storefront-outline"
-                  size={20}
-                  style={[styles.quickSaleIcon, isLightTheme && styles.quickSaleIconLight]}
+                  name="chevron-forward"
+                  size={18}
+                  style={[styles.quickSaleChevron, isLightTheme && styles.quickSaleChevronLight]}
                 />
               </View>
-              <View style={styles.quickSaleTextWrap}>
-                <Text style={[styles.quickSaleBtnText, isLightTheme && styles.quickSaleBtnTextLight]}>
-                  Ir a Punto de Venta
+            </Pressable>
+
+            <View style={[styles.homeMiniChartCard, isLightTheme && styles.homeMiniChartCardLight]}>
+              <Text style={[styles.homeMiniChartTitle, isLightTheme && styles.homeMiniChartTitleLight]}>
+                Ventas últimos 7 días
+              </Text>
+              {loadingKpis ? (
+                <Text style={[styles.homeMiniChartEmpty, isLightTheme && styles.homeMiniChartEmptyLight]}>Cargando...</Text>
+              ) : homeLast7Series.length === 0 ? (
+                <Text style={[styles.homeMiniChartEmpty, isLightTheme && styles.homeMiniChartEmptyLight]}>Sin datos</Text>
+              ) : (
+                <View style={styles.homeMiniBarsWrap}>
+                  {homeLast7Series.map((entry, idx) => {
+                    const dayDate = new Date(entry?.date || '');
+                    const dayLabel = Number.isNaN(dayDate.getTime())
+                      ? '-'
+                      : ['D', 'L', 'M', 'M', 'J', 'V', 'S'][dayDate.getDay()];
+                    const barHeight = Math.max(10, Math.round((Number(entry?.total || 0) / homeMaxDaily) * 100));
+                    return (
+                      <View key={`${entry?.date || idx}-${idx}`} style={styles.homeMiniBarCol}>
+                        <View style={[styles.homeMiniBarTrack, isLightTheme && styles.homeMiniBarTrackLight]}>
+                          <View
+                            style={[
+                              styles.homeMiniBarFill,
+                              {
+                                height: `${barHeight}%`,
+                                backgroundColor: HOME_BAR_COLORS[idx % HOME_BAR_COLORS.length],
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={[styles.homeMiniBarDay, isLightTheme && styles.homeMiniBarDayLight]}>{dayLabel}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+            {homePrimaryActions.length > 0 ? (
+              <View style={[styles.mobileModulesCard, isLightTheme && styles.mobileModulesCardLight]}>
+                {homePrimaryActions.map((item) => (
+                  <Pressable
+                    key={item.code}
+                    onPress={() => navigateToScreen(item.targetScreen, { routeHint: item.route })}
+                    style={[styles.mobileModuleItem, isLightTheme && styles.mobileModuleItemLight]}
+                  >
+                    <View
+                      style={[
+                        styles.mobileModuleIconWrap,
+                        {
+                          backgroundColor: `${resolveMenuAccent(item)}24`,
+                          borderColor: `${resolveMenuAccent(item)}70`,
+                        },
+                      ]}
+                    >
+                      <Ionicons name={resolveMenuIcon(item)} size={20} color={resolveMenuAccent(item)} />
+                    </View>
+                    <Text numberOfLines={1} style={[styles.mobileModuleLabel, isLightTheme && styles.mobileModuleLabelLight]}>
+                      {HOME_ACTION_LABELS[item.targetScreen] || item.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+
+            <Pressable
+              onPress={() => navigateToScreen('AIInsights')}
+              style={[styles.aiInsightsShortcut, isLightTheme && styles.aiInsightsShortcutLight]}
+            >
+              <View style={[styles.aiInsightsShortcutIconWrap, isLightTheme && styles.aiInsightsShortcutIconWrapLight]}>
+                <Ionicons name="sparkles-outline" size={20} style={[styles.aiInsightsShortcutIcon, isLightTheme && styles.aiInsightsShortcutIconLight]} />
+              </View>
+              <View style={styles.aiInsightsShortcutTextWrap}>
+                <Text style={[styles.aiInsightsShortcutTitle, isLightTheme && styles.aiInsightsShortcutTitleLight]}>
+                  Centro IA
                 </Text>
-                <Text style={[styles.quickSaleHint, isLightTheme && styles.quickSaleHintLight]}>
-                  Registrar venta rapida
+                <Text style={[styles.aiInsightsShortcutSub, isLightTheme && styles.aiInsightsShortcutSubLight]}>
+                  8 analisis: inventario, compras, ventas, cajas, cartera, produccion, terceros y dashboard
                 </Text>
               </View>
               <Ionicons
                 name="chevron-forward"
                 size={18}
-                style={[styles.quickSaleChevron, isLightTheme && styles.quickSaleChevronLight]}
+                style={[styles.aiInsightsShortcutChevron, isLightTheme && styles.aiInsightsShortcutChevronLight]}
               />
+            </Pressable>
+
+            {lastMenuAction ? <Text style={styles.successText}>{lastMenuAction}</Text> : null}
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
             </View>
-          </Pressable>
+          </ScrollView>
 
-          <View style={[styles.kpiCardDark, styles.kpiBlue, isLightTheme && styles.kpiBlueLight]}>
-            <View style={styles.kpiTopRow}>
-            <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Ventas Hoy</Text>
-              <Text style={styles.kpiIcon}>◔</Text>
-            </View>
-            <Text style={[styles.kpiAmountDark, styles.kpiBlueText]}>
-              {loadingKpis ? '...' : formatMoney(kpis?.today?.total || 0)}
-            </Text>
-            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
-              {loadingKpis ? 'Cargando...' : `${kpis?.today?.count || 0} transacciones`}
-            </Text>
+          <View style={[styles.mobileBottomDock, styles.mobileBottomDockFixed, isLightTheme && styles.mobileBottomDockLight]}>
+            <Pressable style={styles.mobileDockSideBtn} onPress={() => navigateToScreen('AIInsights', { routeHint: '/ai-insights' })}>
+              <Ionicons name="sparkles" size={20} style={[styles.mobileDockSideIcon, isLightTheme && styles.mobileDockSideIconLight]} />
+              <Text style={[styles.mobileDockSideText, isLightTheme && styles.mobileDockSideTextLight]}>IA</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.mobileDockMainBtn, isLightTheme && styles.mobileDockMainBtnLight]}
+              onPress={() => navigateToScreen('PointOfSale', { routeHint: '/pos' })}
+            >
+              <Ionicons name="add" size={34} style={styles.mobileDockMainIcon} />
+            </Pressable>
+
+            <Pressable style={styles.mobileDockSideBtn} onPress={() => navigateToScreen('Sales', { routeHint: '/sales' })}>
+              <Ionicons name="receipt" size={20} style={[styles.mobileDockSideIcon, isLightTheme && styles.mobileDockSideIconLight]} />
+              <Text style={[styles.mobileDockSideText, isLightTheme && styles.mobileDockSideTextLight]}>Ventas</Text>
+            </Pressable>
           </View>
-
-          <View style={[styles.kpiCardDark, styles.kpiGreen, isLightTheme && styles.kpiGreenLight]}>
-            <View style={styles.kpiTopRow}>
-              <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Este Mes</Text>
-              <Text style={styles.kpiIcon}>◔</Text>
-            </View>
-            <Text style={[styles.kpiAmountDark, styles.kpiGreenText]}>
-              {loadingKpis ? '...' : formatMoney(kpis?.month?.total || 0)}
-            </Text>
-            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
-              {loadingKpis
-                ? 'Cargando...'
-                : `${kpis?.month?.count || 0} transacciones${
-                    kpis?.month?.vs_prev ? ` · ${kpis.month.vs_prev}% vs mes ant.` : ''
-                  }`}
-            </Text>
-          </View>
-
-          <View style={[styles.kpiCardDark, styles.kpiPurple, isLightTheme && styles.kpiPurpleLight]}>
-            <View style={styles.kpiTopRow}>
-              <Text style={[styles.kpiLabelDark, isLightTheme && styles.kpiLabelLight]}>Este Ano</Text>
-              <Text style={styles.kpiIcon}>◔</Text>
-            </View>
-            <Text style={[styles.kpiAmountDark, styles.kpiPurpleText]}>
-              {loadingKpis ? '...' : formatMoney(kpis?.year?.total || 0)}
-            </Text>
-            <Text style={[styles.kpiMetaDark, isLightTheme && styles.kpiMetaLight]}>
-              {loadingKpis
-                ? 'Cargando...'
-                : `${kpis?.year?.count || 0} transacciones totales`}
-            </Text>
-          </View>
-
-          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
-            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Ventas diarias - ultimos 30 dias</Text>
-            <View style={[styles.chartPlaceholder, isLightTheme && styles.chartPlaceholderLight]}>
-              {loadingKpis ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
-              ) : dailySeries.length === 0 ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
-              ) : (
-                dailySeries.slice(-7).map((d) => {
-                  const maxDaily = Math.max(...dailySeries.slice(-7).map((x) => Number(x.total || 0)), 1);
-                  const widthPct = Math.max(4, Math.round((Number(d.total || 0) / maxDaily) * 100));
-                  return (
-                    <View key={d.date} style={styles.chartBarRow}>
-                      <Text style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight]}>{d.date.slice(5)}</Text>
-                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
-                        <View style={[styles.chartFillBlue, { width: `${widthPct}%` }]} />
-                      </View>
-                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(d.total || 0)}</Text>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
-            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Metodos de pago (mes)</Text>
-            <View style={[styles.chartPlaceholderSmall, isLightTheme && styles.chartPlaceholderLight]}>
-              {loadingKpis ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
-              ) : paymentMethodsSeries.length === 0 ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
-              ) : (
-                paymentMethodsSeries.slice(0, 5).map((p) => {
-                  const maxPay = Math.max(
-                    ...paymentMethodsSeries.slice(0, 5).map((x) => Number(x.total || 0)),
-                    1,
-                  );
-                  const widthPct = Math.max(6, Math.round((Number(p.total || 0) / maxPay) * 100));
-                  return (
-                    <View key={p.method} style={styles.chartBarRow}>
-                      <Text numberOfLines={1} style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight, { width: 90 }]}>
-                        {p.method}
-                      </Text>
-                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
-                        <View style={[styles.chartFillTeal, { width: `${widthPct}%` }]} />
-                      </View>
-                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(p.total || 0)}</Text>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.sectionCardDark, isLightTheme && styles.sectionCardLight]}>
-            <Text style={[styles.sectionTitleDark, isLightTheme && styles.sectionTitleLight]}>Top productos del mes</Text>
-            <View style={[styles.chartPlaceholderSmall, isLightTheme && styles.chartPlaceholderLight]}>
-              {loadingKpis ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Cargando...</Text>
-              ) : topProducts.length === 0 ? (
-                <Text style={[styles.chartPlaceholderText, isLightTheme && styles.chartPlaceholderTextLight]}>Sin datos</Text>
-              ) : (
-                topProducts.slice(0, 5).map((p, idx) => {
-                  const maxRevenue = Math.max(
-                    ...topProducts.slice(0, 5).map((x) => Number(x.revenue || 0)),
-                    1,
-                  );
-                  const widthPct = Math.max(6, Math.round((Number(p.revenue || 0) / maxRevenue) * 100));
-                  return (
-                    <View key={`${p.name}-${idx}`} style={styles.chartBarRow}>
-                      <Text numberOfLines={1} style={[styles.listLineLabel, isLightTheme && styles.listLineLabelLight, { width: 110 }]}>
-                        {p.name}
-                      </Text>
-                      <View style={[styles.chartTrack, isLightTheme && styles.chartTrackLight]}>
-                        <View style={[styles.chartFillOrange, { width: `${widthPct}%` }]} />
-                      </View>
-                      <Text style={[styles.listLineValue, isLightTheme && styles.listLineValueLight]}>{formatMoney(p.revenue || 0)}</Text>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.panelDark, isLightTheme && styles.panelLight]}>
-            <Text style={[styles.panelTitleDark, isLightTheme && styles.panelTitleLight]}>Contexto</Text>
-            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Usuario: {userProfile?.full_name || userEmail || 'Usuario'}</Text>
-            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Roles: {rolesText}</Text>
-            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Page size listados: {defaultPageSize}</Text>
-            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>Pendientes sync: {pendingOpsCount}</Text>
-            <Text style={[styles.panelLineDark, isLightTheme && styles.panelLineLight]}>
-              Menu mobile: {supportedMenuItemsCount}/{menuItemsCount}
-            </Text>
-            <Text style={[styles.panelLineMutedDark, isLightTheme && styles.panelLineMutedLight]}>
-              {menuCachedAt
-                ? `Cache menu: ${new Date(menuCachedAt).toLocaleString()}`
-                : 'Sin cache de menu local'}
-            </Text>
-          </View>
-
-          {lastMenuAction ? <Text style={styles.successText}>{lastMenuAction}</Text> : null}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <Pressable onPress={handleLogout} style={styles.secondaryButtonDark}>
-            <Text style={styles.secondaryButtonTextDark}>
-              {offlineMode ? 'Salir de modo offline' : 'Cerrar sesion'}
-            </Text>
-          </Pressable>
-          </View>
-        </ScrollView>
+        </View>
       )}
       <StatusBar
         style={isLightTheme ? 'dark' : 'light'}
-        backgroundColor={isLightTheme ? '#f8fafc' : '#111827'}
+        backgroundColor={isLightTheme ? APP_THEME_COLORS.light.statusBarBackground : APP_THEME_COLORS.dark.statusBarBackground}
         translucent={false}
       />
       </SafeAreaView>
@@ -1840,61 +2152,152 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: APP_THEME_COLORS.light.rootBackground,
   },
   rootDark: {
     flex: 1,
-    backgroundColor: '#0b0f14',
+    backgroundColor: APP_THEME_COLORS.dark.rootBackground,
+  },
+  brandGlowTop: {
+    position: 'absolute',
+    top: -90,
+    right: -60,
+    width: 260,
+    height: 260,
+    borderRadius: 999,
+    backgroundColor: APP_THEME_COLORS.shared.brandGlowTopDark,
+    opacity: 0.22,
+  },
+  brandGlowTopLight: {
+    backgroundColor: APP_THEME_COLORS.shared.brandGlowTopLight,
+    opacity: 0.18,
+  },
+  brandGlowBottom: {
+    position: 'absolute',
+    bottom: -120,
+    left: -80,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: APP_THEME_COLORS.shared.brandGlowBottomDark,
+    opacity: 0.16,
+  },
+  brandGlowBottomLight: {
+    backgroundColor: APP_THEME_COLORS.shared.brandGlowBottomLight,
+    opacity: 0.12,
   },
   appBar: {
     height: 56,
-    backgroundColor: '#111827',
+    backgroundColor: APP_THEME_COLORS.dark.appBarBackground,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
+    borderBottomColor: APP_THEME_COLORS.dark.appBarBorder,
   },
   appBarLight: {
-    backgroundColor: '#f8fafc',
-    borderBottomColor: '#e2e8f0',
+    backgroundColor: APP_THEME_COLORS.light.appBarBackground,
+    borderBottomColor: APP_THEME_COLORS.light.appBarBorder,
+  },
+  appBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  appBrandLogoWrap: {
+    width: 46,
+    height: 46,
+    marginLeft: 8,
+    marginTop: -6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appBrandLogo: {
+    width: 42,
+    height: 42,
+    transform: [{ translateY: -2 }],
+  },
+  appBrandTextWrap: {
+    marginLeft: 8,
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  brandWordmark: {
+    fontSize: 26,
+    lineHeight: 26,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  brandWordmarkOfir: {
+    color: APP_THEME_COLORS.dark.brandOfir,
+  },
+  brandWordmarkOfirLight: {
+    color: APP_THEME_COLORS.light.brandOfir,
+  },
+  brandWordmarkOne: {
+    color: APP_THEME_COLORS.dark.brandOne,
+  },
+  brandWordmarkOneLight: {
+    color: APP_THEME_COLORS.light.brandOne,
   },
   appBarTitle: {
-    color: '#ffffff',
+    color: APP_THEME_COLORS.dark.appBarTitle,
     fontWeight: '700',
-    fontSize: 17,
-    marginLeft: 10,
-    flex: 1,
+    fontSize: 11,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 0,
   },
   appBarTitleLight: {
-    color: '#0f172a',
+    color: APP_THEME_COLORS.light.appBarTitle,
   },
   appBarRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   notificationsBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: APP_THEME_COLORS.dark.iconButtonBorder,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#111827',
+    backgroundColor: APP_THEME_COLORS.dark.iconButtonBackground,
     position: 'relative',
   },
   notificationsBtnLight: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: APP_THEME_COLORS.light.iconButtonBackground,
+    borderColor: APP_THEME_COLORS.light.iconButtonBorder,
   },
   notificationsBtnText: {
-    color: '#e2e8f0',
-    fontSize: 14,
+    color: APP_THEME_COLORS.dark.iconButtonIcon,
   },
   notificationsBtnTextLight: {
-    color: '#0f172a',
+    color: APP_THEME_COLORS.light.iconButtonIcon,
+  },
+  themeToggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: APP_THEME_COLORS.dark.iconButtonBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: APP_THEME_COLORS.dark.iconButtonBackground,
+  },
+  themeToggleBtnLight: {
+    backgroundColor: APP_THEME_COLORS.light.iconButtonBackground,
+    borderColor: APP_THEME_COLORS.light.iconButtonBorder,
+  },
+  themeToggleIcon: {
+    color: APP_THEME_COLORS.dark.themeToggleIcon,
+  },
+  themeToggleIconLight: {
+    color: APP_THEME_COLORS.light.themeToggleIcon,
   },
   notificationsBadge: {
     position: 'absolute',
@@ -1904,84 +2307,107 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     paddingHorizontal: 4,
-    backgroundColor: '#dc2626',
+    backgroundColor: APP_THEME_COLORS.shared.notificationBadgeBackground,
     alignItems: 'center',
     justifyContent: 'center',
   },
   notificationsBadgeText: {
-    color: '#ffffff',
+    color: APP_THEME_COLORS.shared.notificationBadgeText,
     fontSize: 10,
     fontWeight: '700',
   },
   appBarBackBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: 34,
+    height: 34,
+    borderRadius: 11,
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 3,
+    borderColor: APP_THEME_COLORS.dark.backButtonBorder,
+    backgroundColor: APP_THEME_COLORS.dark.backButtonBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   appBarBackBtnLight: {
-    borderColor: '#cbd5e1',
-    backgroundColor: '#ffffff',
+    borderColor: APP_THEME_COLORS.light.backButtonBorder,
+    backgroundColor: APP_THEME_COLORS.light.backButtonBackground,
   },
   appBarBackIcon: {
-    color: '#e2e8f0',
+    color: APP_THEME_COLORS.dark.backButtonIcon,
+    marginLeft: -1,
   },
   appBarBackIconLight: {
-    color: '#334155',
+    color: APP_THEME_COLORS.light.backButtonIcon,
   },
-  appBarBackText: {
-    color: '#e2e8f0',
+  appBarAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: APP_THEME_COLORS.dark.avatarBackground,
+    borderWidth: 1,
+    borderColor: APP_THEME_COLORS.dark.avatarBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appBarAvatarLight: {
+    borderColor: APP_THEME_COLORS.light.avatarBorder,
+    backgroundColor: APP_THEME_COLORS.light.avatarBackground,
+  },
+  appBarAvatarText: {
+    color: APP_THEME_COLORS.dark.avatarText,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  appBarBackTextLight: {
-    color: '#334155',
+  appBarAvatarTextLight: {
+    color: APP_THEME_COLORS.light.avatarText,
   },
   connectionChip: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   connectionChipOnline: {
-    borderColor: '#14532d',
-    backgroundColor: '#052e16',
+    borderColor: APP_THEME_COLORS.shared.connectionOnlineBorder,
+    backgroundColor: APP_THEME_COLORS.shared.connectionOnlineBackground,
   },
   connectionChipOffline: {
-    borderColor: '#7f1d1d',
-    backgroundColor: '#450a0a',
+    borderColor: APP_THEME_COLORS.shared.connectionOfflineBorder,
+    backgroundColor: APP_THEME_COLORS.shared.connectionOfflineBackground,
   },
   connectionChipText: {
-    color: '#e2e8f0',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
+  connectionChipTextOnline: { color: APP_THEME_COLORS.shared.connectionOnlineText },
+  connectionChipTextOffline: { color: APP_THEME_COLORS.shared.connectionOfflineText },
   connectionDot: {
     fontSize: 10,
     fontWeight: '700',
     lineHeight: 12,
   },
-  connectionDotOnline: { color: '#22c55e' },
-  connectionDotOffline: { color: '#ef4444' },
+  connectionDotOnline: { color: APP_THEME_COLORS.shared.connectionOnlineDot },
+  connectionDotOffline: { color: APP_THEME_COLORS.shared.connectionOfflineDot },
   menuTrigger: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: '#1e40af',
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: APP_THEME_COLORS.dark.menuTriggerBackground,
+    borderWidth: 1,
+    borderColor: APP_THEME_COLORS.dark.menuTriggerBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  menuTriggerLight: {
+    backgroundColor: APP_THEME_COLORS.light.menuTriggerBackground,
+    borderColor: APP_THEME_COLORS.light.menuTriggerBorder,
+  },
   menuTriggerText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
+    color: APP_THEME_COLORS.dark.menuTriggerIcon,
+  },
+  menuTriggerTextLight: {
+    color: APP_THEME_COLORS.light.menuTriggerIcon,
   },
   menuOverlay: {
     flex: 1,
@@ -1994,11 +2420,14 @@ const styles = StyleSheet.create({
   menuDrawer: {
     width: '82%',
     maxWidth: 360,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8fbff',
+    borderLeftWidth: 1,
+    borderLeftColor: '#cddcf1',
     paddingBottom: 14,
   },
   menuDrawerDark: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0c1528',
+    borderLeftColor: '#213755',
   },
   notificationsModal: {
     width: '92%',
@@ -2139,7 +2568,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingTop: 16,
-    paddingBottom: 10,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
   },
@@ -2154,16 +2583,31 @@ const styles = StyleSheet.create({
   menuHeaderTitleDark: {
     color: '#f8fafc',
   },
+  menuHeaderBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  menuHeaderLogo: {
+    width: 42,
+    height: 42,
+  },
+  menuHeaderWordmark: {
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: '900',
+  },
   menuCloseBtn: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
+    borderColor: '#cfddf0',
+    borderRadius: 9,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    backgroundColor: '#ffffff',
   },
   menuCloseBtnDark: {
-    borderColor: '#334155',
-    backgroundColor: '#111827',
+    borderColor: '#334d74',
+    backgroundColor: '#11203a',
   },
   menuCloseText: {
     color: '#334155',
@@ -2177,7 +2621,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
     color: '#0f172a',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   menuUserDark: {
@@ -2185,8 +2629,8 @@ const styles = StyleSheet.create({
   },
   menuTenant: {
     paddingHorizontal: 14,
-    color: '#64748b',
-    fontSize: 12,
+    color: '#5d7394',
+    fontSize: 11,
     marginBottom: 8,
   },
   menuTenantDark: {
@@ -2209,24 +2653,50 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   menuSectionBtn: {
-    minHeight: 44,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    minHeight: 46,
+    borderRadius: 12,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f5f8ff',
+    borderWidth: 1,
+    borderColor: '#d9e4f4',
   },
   menuSectionBtnDark: {
-    backgroundColor: '#111827',
+    backgroundColor: '#101a2e',
+    borderColor: '#253957',
+  },
+  menuSectionBtnDisabled: {
+    opacity: 0.52,
+  },
+  menuSectionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  menuIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuIconBadgeDisabled: {
+    opacity: 0.65,
   },
   menuSectionText: {
     color: '#0f172a',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
   menuSectionTextDark: {
     color: '#e2e8f0',
+  },
+  menuSectionTextDisabled: {
+    color: '#64748b',
   },
   menuChevron: {
     color: '#334155',
@@ -2238,32 +2708,52 @@ const styles = StyleSheet.create({
   },
   menuChildren: {
     marginTop: 4,
-    marginLeft: 10,
+    marginLeft: 8,
   },
   menuChildBtn: {
     minHeight: 38,
-    justifyContent: 'center',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#f1f5f9',
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    backgroundColor: '#f0f5ff',
     marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dbe7f7',
   },
   menuChildBtnDark: {
-    backgroundColor: '#1f2937',
+    backgroundColor: '#172236',
+    borderColor: '#2a3f60',
+  },
+  menuChildIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
   },
   menuChildBtnDisabled: {
     opacity: 0.55,
   },
   menuChildText: {
     color: '#1e293b',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
+    flex: 1,
+    marginLeft: 8,
   },
   menuChildTextDark: {
     color: '#e2e8f0',
   },
   menuChildTextDisabled: {
     color: '#64748b',
+  },
+  menuChildChevron: {
+    color: '#4b5f84',
+  },
+  menuChildChevronLight: {
+    color: '#607b9f',
+  },
+  menuLockedIcon: {
+    color: '#7c8fae',
   },
   menuFooter: {
     borderTopWidth: 1,
@@ -2302,19 +2792,445 @@ const styles = StyleSheet.create({
   },
   homeWrap: {
     paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 26,
+    paddingTop: 10,
+    paddingBottom: 30,
+  },
+  homeScreenContainer: {
+    flex: 1,
+  },
+  homeScrollWithDock: {
+    paddingBottom: 124,
+  },
+  mobileMetricMainCard: {
+    marginBottom: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#111c33',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileMetricMainCardLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  mobileMetricMainLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+  },
+  mobileMetricMainLogo: {
+    width: 58,
+    height: 58,
+    marginRight: 10,
+  },
+  mobileMetricMainTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  mobileMetricTitle: {
+    color: '#e7efff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mobileMetricTitleLight: {
+    color: '#223b64',
+  },
+  mobileMetricMainAmount: {
+    marginTop: 4,
+    color: '#f8fafc',
+    fontSize: 42,
+    lineHeight: 44,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  mobileMetricMainAmountLight: {
+    color: '#1e2f4d',
+  },
+  mobileMetricCard: {
+    marginBottom: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#111c33',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  mobileMetricCardLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  mobileMetricThinCard: {
+    paddingVertical: 10,
+  },
+  mobileMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  mobileMetricIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0f172a',
+  },
+  mobileMetricIconWrapLight: {
+    backgroundColor: '#edf2fb',
+  },
+  mobileMetricIconGold: {
+    color: '#f6c84a',
+  },
+  mobileMetricIconBlue: {
+    color: '#5caeff',
+  },
+  mobileMetricTextWrap: {
+    flex: 1,
+  },
+  mobileMetricAmount: {
+    marginTop: 2,
+    color: '#f8fafc',
+    fontSize: 21,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+  },
+  mobileMetricAmountLight: {
+    color: '#1e2f4d',
+  },
+  mobileTrendUp: {
+    color: '#65db72',
+    fontWeight: '800',
+    fontSize: 17,
+  },
+  mobileTrendDown: {
+    color: '#f48a7d',
+    fontWeight: '800',
+    fontSize: 17,
+  },
+  homeMiniChartCard: {
+    marginBottom: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#101a2f',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  homeMiniChartCardLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  homeMiniChartTitle: {
+    color: '#f0f4ff',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  homeMiniChartTitleLight: {
+    color: '#1f365c',
+  },
+  homeMiniChartEmpty: {
+    color: '#8ca2c8',
+    fontSize: 13,
+  },
+  homeMiniChartEmptyLight: {
+    color: '#64748b',
+  },
+  homeMiniBarsWrap: {
+    height: 116,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  homeMiniBarCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  homeMiniBarTrack: {
+    width: '100%',
+    height: 92,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2f456b',
+    backgroundColor: '#0e1627',
+    justifyContent: 'flex-end',
+    padding: 4,
+    overflow: 'hidden',
+  },
+  homeMiniBarTrackLight: {
+    borderColor: '#dbe5f2',
+    backgroundColor: '#eef3fb',
+  },
+  homeMiniBarFill: {
+    width: '100%',
+    borderRadius: 6,
+    minHeight: 6,
+  },
+  homeMiniBarDay: {
+    marginTop: 5,
+    color: '#d4def3',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  homeMiniBarDayLight: {
+    color: '#475569',
+  },
+  mobileModulesCard: {
+    marginBottom: 12,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#0f1a2f',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  mobileModulesCardLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  mobileModuleItem: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2d4264',
+    backgroundColor: '#131f35',
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileModuleItemLight: {
+    borderColor: '#dbe5f2',
+    backgroundColor: '#f6f9ff',
+  },
+  mobileModuleIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 7,
+  },
+  mobileModuleLabel: {
+    color: '#e0ebff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  mobileModuleLabelLight: {
+    color: '#2a466f',
+  },
+  aiInsightsShortcut: {
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2a4670',
+    backgroundColor: '#111f37',
+    borderRadius: 14,
+    minHeight: 66,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiInsightsShortcutLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  aiInsightsShortcutIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#4f67a0',
+    backgroundColor: '#162744',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiInsightsShortcutIconWrapLight: {
+    borderColor: '#c9d8eb',
+    backgroundColor: '#f1f6ff',
+  },
+  aiInsightsShortcutIcon: {
+    color: '#8f7cff',
+  },
+  aiInsightsShortcutIconLight: {
+    color: '#5d58d8',
+  },
+  aiInsightsShortcutTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  aiInsightsShortcutTitle: {
+    color: '#e2e8f0',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  aiInsightsShortcutTitleLight: {
+    color: '#0f172a',
+  },
+  aiInsightsShortcutSub: {
+    color: '#9fb7dc',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  aiInsightsShortcutSubLight: {
+    color: '#47638b',
+  },
+  aiInsightsShortcutChevron: {
+    color: '#93c5fd',
+  },
+  aiInsightsShortcutChevronLight: {
+    color: '#235ea9',
+  },
+  mobileBottomDock: {
+    marginTop: 2,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#101b30',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  mobileBottomDockFixed: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 10,
+    zIndex: 8,
+  },
+  mobileBottomDockLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  mobileDockSideBtn: {
+    width: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  mobileDockSideIcon: {
+    color: '#60adff',
+  },
+  mobileDockSideIconLight: {
+    color: '#235ea9',
+  },
+  mobileDockSideText: {
+    color: '#ccd9f3',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  mobileDockSideTextLight: {
+    color: '#516a8f',
+  },
+  mobileDockMainBtn: {
+    width: 152,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 1,
+    borderColor: '#8ce37f',
+    backgroundColor: '#47be53',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#05280f',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  mobileDockMainBtnLight: {
+    borderColor: '#83d77a',
+    backgroundColor: '#4ec45b',
+  },
+  mobileDockMainIcon: {
+    color: '#f2fff1',
+    fontWeight: '700',
+  },
+  homeHeroCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1f3e68',
+    backgroundColor: '#0f1a30',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  homeHeroCardLight: {
+    borderColor: '#cfddf0',
+    backgroundColor: '#f8fbff',
+  },
+  quickGridCard: {
+    marginBottom: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#223a5e',
+    backgroundColor: '#0f182b',
+    padding: 10,
+  },
+  quickGridCardLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#ffffff',
+  },
+  quickGridWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickGridItem: {
+    width: '31%',
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#2d4264',
+    backgroundColor: '#131f35',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickGridItemLight: {
+    borderColor: '#d5e2f4',
+    backgroundColor: '#f8fbff',
+  },
+  quickGridIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  quickGridLabel: {
+    color: '#dbeafe',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quickGridLabelLight: {
+    color: '#2a466f',
   },
   homeTitleDark: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#f8fafc',
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#f4f8ff',
+    letterSpacing: 0.2,
   },
   homeSubtitleDark: {
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: 4,
-    marginBottom: 10,
+    fontSize: 12,
+    color: '#9fb3d3',
+    marginTop: 2,
+    marginBottom: 2,
   },
   homeSubtitleLight: {
     color: '#475569',
@@ -2332,7 +3248,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   statusTextDark: {
-    color: '#cbd5e1',
+    color: '#bad0f1',
     fontSize: 12,
   },
   statusTextLight: {
@@ -2341,9 +3257,9 @@ const styles = StyleSheet.create({
   themeSwitchCard: {
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#111827',
-    borderRadius: 12,
+    borderColor: '#223a5e',
+    backgroundColor: '#0f1a30',
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
     flexDirection: 'row',
@@ -2351,7 +3267,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   themeSwitchCardLight: {
-    borderColor: '#dbe4ef',
+    borderColor: '#d5e2f4',
     backgroundColor: '#ffffff',
   },
   themeSwitchTextWrap: {
@@ -2359,7 +3275,7 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   themeSwitchTitle: {
-    color: '#f8fafc',
+    color: '#dbeafe',
     fontWeight: '700',
     fontSize: 13,
   },
@@ -2367,7 +3283,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   themeSwitchSubtitle: {
-    color: '#94a3b8',
+    color: '#9fb3d3',
     marginTop: 2,
     fontSize: 11,
   },
@@ -2391,12 +3307,12 @@ const styles = StyleSheet.create({
   },
   quickSaleBtn: {
     marginBottom: 12,
-    backgroundColor: '#0b5fa8',
-    borderRadius: 14,
+    backgroundColor: '#3cae4d',
+    borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: '#38bdf8',
+    borderColor: '#7fe06e',
     shadowColor: '#020617',
     shadowOpacity: 0.28,
     shadowOffset: { width: 0, height: 6 },
@@ -2404,9 +3320,9 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   quickSaleBtnLight: {
-    backgroundColor: '#2563eb',
-    borderColor: '#93c5fd',
-    shadowColor: '#2563eb',
+    backgroundColor: '#47b954',
+    borderColor: '#92dc84',
+    shadowColor: '#2f8a3a',
     shadowOpacity: 0.18,
   },
   quickSaleContent: {
@@ -2419,10 +3335,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(2, 6, 23, 0.28)',
+    backgroundColor: 'rgba(2, 25, 8, 0.24)',
   },
   quickSaleIconWrapLight: {
-    backgroundColor: 'rgba(239, 246, 255, 0.32)',
+    backgroundColor: 'rgba(235, 255, 234, 0.5)',
   },
   quickSaleIcon: {
     color: '#dbeafe',
@@ -2443,16 +3359,16 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   quickSaleHint: {
-    color: '#bae6fd',
+    color: '#e9ffe8',
     marginTop: 2,
     fontSize: 11,
     fontWeight: '600',
   },
   quickSaleHintLight: {
-    color: '#dbeafe',
+    color: '#efffef',
   },
   quickSaleChevron: {
-    color: '#e0f2fe',
+    color: '#efffef',
   },
   quickSaleChevronLight: {
     color: '#ffffff',
@@ -2465,28 +3381,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   kpiBlue: {
-    backgroundColor: '#0f2434',
-    borderColor: '#1d4f7a',
+    backgroundColor: '#13203a',
+    borderColor: '#244a7a',
   },
   kpiBlueLight: {
-    backgroundColor: '#eef6ff',
-    borderColor: '#bfdbfe',
+    backgroundColor: '#f2f7ff',
+    borderColor: '#d2e3fa',
   },
   kpiGreen: {
-    backgroundColor: '#0f2a1b',
-    borderColor: '#245d3b',
+    backgroundColor: '#132b1d',
+    borderColor: '#2f7045',
   },
   kpiGreenLight: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#a7f3d0',
+    backgroundColor: '#effcf4',
+    borderColor: '#bcebd0',
   },
   kpiPurple: {
-    backgroundColor: '#261133',
-    borderColor: '#54316e',
+    backgroundColor: '#1f1c3a',
+    borderColor: '#4d4b95',
   },
   kpiPurpleLight: {
-    backgroundColor: '#f5f3ff',
-    borderColor: '#ddd6fe',
+    backgroundColor: '#f2f2ff',
+    borderColor: '#d5d5fb',
   },
   kpiTopRow: {
     flexDirection: 'row',
@@ -2532,15 +3448,15 @@ const styles = StyleSheet.create({
   sectionCardDark: {
     marginTop: 4,
     marginBottom: 10,
-    borderRadius: 12,
-    backgroundColor: '#171b23',
+    borderRadius: 14,
+    backgroundColor: '#101b30',
     borderWidth: 1,
-    borderColor: '#2a3240',
-    padding: 10,
+    borderColor: '#223a5e',
+    padding: 11,
   },
   sectionCardLight: {
     backgroundColor: '#ffffff',
-    borderColor: '#dbe4ef',
+    borderColor: '#d5e2f4',
   },
   sectionTitleDark: {
     color: '#e2e8f0',
@@ -2553,8 +3469,8 @@ const styles = StyleSheet.create({
   },
   chartPlaceholder: {
     height: 170,
-    borderRadius: 10,
-    backgroundColor: '#252d39',
+    borderRadius: 12,
+    backgroundColor: '#1a2742',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
     paddingHorizontal: 10,
@@ -2562,8 +3478,8 @@ const styles = StyleSheet.create({
   },
   chartPlaceholderSmall: {
     height: 150,
-    borderRadius: 10,
-    backgroundColor: '#252d39',
+    borderRadius: 12,
+    backgroundColor: '#1a2742',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
     paddingHorizontal: 10,
@@ -2640,15 +3556,15 @@ const styles = StyleSheet.create({
   },
   panelDark: {
     marginTop: 4,
-    borderRadius: 12,
-    backgroundColor: '#111827',
+    borderRadius: 14,
+    backgroundColor: '#0e182d',
     borderWidth: 1,
-    borderColor: '#263243',
+    borderColor: '#223a5e',
     padding: 12,
   },
   panelLight: {
     backgroundColor: '#ffffff',
-    borderColor: '#dbe4ef',
+    borderColor: '#d5e2f4',
   },
   panelTitleDark: {
     color: '#e2e8f0',
@@ -2751,7 +3667,7 @@ const styles = StyleSheet.create({
   },
   kpiCardBlue: {
     backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
+    borderColor: '#eff6ff',
   },
   kpiCardGreen: {
     backgroundColor: '#ecfdf5',
@@ -2823,10 +3739,10 @@ const styles = StyleSheet.create({
   secondaryButtonDark: {
     marginTop: 14,
     borderWidth: 1,
-    borderColor: '#475569',
-    borderRadius: 10,
+    borderColor: '#3a5e8d',
+    borderRadius: 12,
     paddingVertical: 11,
-    backgroundColor: '#1f2937',
+    backgroundColor: '#13213a',
   },
   secondaryButtonTextDark: {
     textAlign: 'center',

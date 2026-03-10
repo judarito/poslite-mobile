@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import DatePickerField from '../components/DatePickerField';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { useThemeMode } from '../lib/themeMode';
+import { resolveReportQueryFromText } from '../services/commandEngine/reportQueryEngine.service';
 import { getSimpleCache, saveSimpleCache } from '../services/offlineCache.service';
 import { getReportsSnapshot, listReportLocations } from '../services/reports.service';
 
@@ -24,6 +26,24 @@ function getPresetRange(days) {
   return { from: formatInputDate(from), to: formatInputDate(now) };
 }
 
+function getEngineSourceLabel(source, originalSource = null) {
+  const normalized = String(source || '').trim().toLowerCase();
+  const upstream = String(originalSource || '').trim().toLowerCase();
+
+  const sourceMap = {
+    local_cache: 'cache local',
+    deterministic_parser: 'parser local',
+    local_llm: 'llm local',
+    cloud_llm: 'llm cloud',
+  };
+
+  if (normalized === 'local_cache' && upstream && sourceMap[upstream]) {
+    return `cache local (${sourceMap[upstream]})`;
+  }
+
+  return sourceMap[normalized] || normalized || 'desconocido';
+}
+
 export default function ReportsScreen({
   tenant,
   offlineMode,
@@ -38,6 +58,9 @@ export default function ReportsScreen({
   const [snapshot, setSnapshot] = useState(null);
   const [cacheInfo, setCacheInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [aiQueryText, setAiQueryText] = useState('');
+  const [loadingAiQuery, setLoadingAiQuery] = useState(false);
+  const [aiQuerySummary, setAiQuerySummary] = useState(null);
   const [error, setError] = useState('');
   const themeMode = useThemeMode();
   const isLightTheme = themeMode === 'light';
@@ -54,6 +77,10 @@ export default function ReportsScreen({
     () =>
       `reports:snapshot:${tenant?.tenant_id || 'na'}:${fromDate}:${toDate}:${locationId || 'all'}`,
     [fromDate, locationId, tenant?.tenant_id, toDate],
+  );
+  const locationOptions = useMemo(
+    () => (locations || []).map((loc) => ({ location_id: loc.location_id, name: loc.name })),
+    [locations],
   );
 
   useEffect(() => {
@@ -114,6 +141,62 @@ export default function ReportsScreen({
     setLoading(false);
   };
 
+  const applyAiReportQuery = async () => {
+    if (!tenant?.tenant_id) return;
+
+    const text = String(aiQueryText || '').trim();
+    if (!text) {
+      setError('Escribe una consulta para IA de reportes.');
+      return;
+    }
+
+    setLoadingAiQuery(true);
+    setError('');
+    try {
+      const result = await resolveReportQueryFromText({
+        tenantId: tenant.tenant_id,
+        inputText: text,
+        inputType: 'text',
+        offlineMode,
+        locationOptions,
+      });
+
+      if (!result.success || !result?.data?.intent) {
+        setError(result.error || 'No se pudo interpretar la consulta IA.');
+        return;
+      }
+
+      const { intent, engine, summary } = result.data;
+      if (intent.tab) setTab(intent.tab);
+      if (intent.from_date) setFromDate(intent.from_date);
+      if (intent.to_date) setToDate(intent.to_date);
+
+      const locationText = String(intent.location_text || '').toLowerCase();
+      const wantsAllLocations = locationText.includes('todas') || locationText.includes('all');
+      if (intent.location_id) {
+        setLocationId(intent.location_id);
+      } else if (wantsAllLocations || intent.location_text) {
+        setLocationId('');
+      }
+
+      setAiQuerySummary({
+        sourceLabel: getEngineSourceLabel(engine?.source, engine?.original_source),
+        confidence: Number(intent.confidence || 0),
+        fallbackChain: Array.isArray(engine?.fallback_chain) ? engine.fallback_chain : [],
+        tab: intent.tab || null,
+        fromDate: intent.from_date || null,
+        toDate: intent.to_date || null,
+        locationName: intent.location_name || null,
+        summary: summary || null,
+      });
+      setAiQueryText('');
+    } catch (error) {
+      setError(String(error?.message || 'No se pudo interpretar la consulta IA.'));
+    } finally {
+      setLoadingAiQuery(false);
+    }
+  };
+
   useEffect(() => {
     loadSnapshot();
   }, [tenant?.tenant_id, fromDate, toDate, locationId, offlineMode]);
@@ -143,27 +226,81 @@ export default function ReportsScreen({
         {loading ? <ActivityIndicator color="#38bdf8" style={{ marginTop: 8 }} /> : null}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filtersScroll}
-        contentContainerStyle={styles.filtersContent}
-      >
-        <View style={styles.tabRow}>
-          {TABS.map((entry) => {
-            const active = tab === entry.key;
-            return (
-                <Pressable
-                  key={entry.key}
-                  style={[styles.tabBtn, isLightTheme && styles.tabBtnLight, active && styles.tabBtnActive]}
-                  onPress={() => setTab(entry.key)}
-                >
-                  <Text style={[styles.tabText, isLightTheme && styles.tabTextLight, active && styles.tabTextActive]}>{entry.label}</Text>
-                </Pressable>
-              );
-            })}
-        </View>
-      </ScrollView>
+      <View style={[styles.aiQueryCard, isLightTheme && styles.aiQueryCardLight]}>
+        <Text style={[styles.aiQueryTitle, isLightTheme && styles.aiQueryTitleLight]}>Consulta IA</Text>
+        <TextInput
+          value={aiQueryText}
+          onChangeText={setAiQueryText}
+          placeholder="Ej: ventas de hoy en sede principal"
+          placeholderTextColor="#64748b"
+          style={[styles.aiQueryInput, isLightTheme && styles.aiQueryInputLight]}
+          editable={!loadingAiQuery}
+          returnKeyType="send"
+          onSubmitEditing={applyAiReportQuery}
+        />
+        <Pressable
+          onPress={applyAiReportQuery}
+          disabled={loadingAiQuery}
+          style={[
+            styles.aiQueryButton,
+            isLightTheme && styles.aiQueryButtonLight,
+            loadingAiQuery && styles.aiQueryButtonDisabled,
+          ]}
+        >
+          <Text style={styles.aiQueryButtonText}>
+            {loadingAiQuery ? 'Analizando...' : 'Aplicar consulta IA'}
+          </Text>
+        </Pressable>
+        {aiQuerySummary ? (
+          <View style={[styles.aiResultCard, isLightTheme && styles.aiResultCardLight]}>
+            <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+              Fuente: {aiQuerySummary.sourceLabel}
+            </Text>
+            <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+              Confianza: {Math.round(Number(aiQuerySummary.confidence || 0) * 100)}%
+            </Text>
+            {aiQuerySummary.tab ? (
+              <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+                Vista: {TABS.find((entry) => entry.key === aiQuerySummary.tab)?.label || aiQuerySummary.tab}
+              </Text>
+            ) : null}
+            {aiQuerySummary.fromDate && aiQuerySummary.toDate ? (
+              <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+                Rango: {aiQuerySummary.fromDate} a {aiQuerySummary.toDate}
+              </Text>
+            ) : null}
+            {aiQuerySummary.locationName ? (
+              <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+                Sede: {aiQuerySummary.locationName}
+              </Text>
+            ) : null}
+            {aiQuerySummary.summary ? (
+              <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+                Resumen: {aiQuerySummary.summary}
+              </Text>
+            ) : null}
+            {aiQuerySummary.fallbackChain?.length ? (
+              <Text style={[styles.aiResultLine, isLightTheme && styles.aiResultLineLight]}>
+                Ruta: {aiQuerySummary.fallbackChain.join(' -> ')}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Vista"
+          themeMode={themeMode}
+          valueLabel={TABS.find((entry) => entry.key === tab)?.label || 'Ventas'}
+          placeholder="Seleccionar vista"
+          searchPlaceholder="Buscar vista..."
+          options={TABS.map((entry) => ({ key: entry.key, label: entry.label, searchText: entry.label }))}
+          selectedKey={tab}
+          onSelect={(nextValue) => setTab(nextValue || 'sales')}
+          allowClear={false}
+        />
+      </View>
 
       <ScrollView
         horizontal
@@ -215,37 +352,23 @@ export default function ReportsScreen({
         </View>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filtersScroll}
-        contentContainerStyle={styles.filtersContent}
-      >
-        <View style={styles.chipsRow}>
-          <Pressable
-            style={[styles.filterChip, isLightTheme && styles.filterChipLight, !locationId && styles.filterChipActive]}
-            onPress={() => setLocationId('')}
-          >
-            <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, !locationId && styles.filterChipTextActive]}>
-              Todas las sedes
-            </Text>
-          </Pressable>
-          {locations.map((loc) => {
-            const active = locationId === loc.location_id;
-            return (
-              <Pressable
-                key={loc.location_id}
-                style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-                onPress={() => setLocationId(loc.location_id)}
-              >
-                <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
-                  {loc.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Sede"
+          themeMode={themeMode}
+          valueLabel="Todas las sedes"
+          clearLabel="Todas las sedes"
+          placeholder="Todas las sedes"
+          searchPlaceholder="Buscar sede..."
+          options={(locations || []).map((loc) => ({
+            key: loc.location_id,
+            label: loc.name,
+            searchText: loc.name,
+          }))}
+          selectedKey={locationId || ''}
+          onSelect={(nextValue) => setLocationId(nextValue || '')}
+        />
+      </View>
 
       <View style={styles.metaWrap}>
         <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Vista: {TABS.find((t) => t.key === tab)?.label || 'Reportes'}</Text>
@@ -519,8 +642,8 @@ export default function ReportsScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   heroCard: {
     backgroundColor: '#0f172a',
     borderColor: '#1e293b',
@@ -538,6 +661,84 @@ const styles = StyleSheet.create({
   heroTitleLight: { color: '#0f172a' },
   heroSub: { color: '#94a3b8', marginTop: 3, fontSize: 12 },
   heroSubLight: { color: '#475569' },
+  aiQueryCard: {
+    backgroundColor: '#0f172a',
+    borderColor: '#1e293b',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 8,
+  },
+  aiQueryCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
+  aiQueryTitle: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  aiQueryTitleLight: {
+    color: '#0f172a',
+  },
+  aiQueryInput: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#0b1220',
+    color: '#f8fafc',
+    minHeight: 42,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  aiQueryInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+  },
+  aiQueryButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#235ea9',
+    backgroundColor: '#235ea9',
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  aiQueryButtonLight: {
+    borderColor: '#1d4f8c',
+    backgroundColor: '#1d4f8c',
+  },
+  aiQueryButtonDisabled: {
+    opacity: 0.55,
+  },
+  aiQueryButtonText: {
+    color: '#eff6ff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  aiResultCard: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#0b1220',
+    padding: 9,
+  },
+  aiResultCardLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fbff',
+  },
+  aiResultLine: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  aiResultLineLight: {
+    color: '#334155',
+  },
   sourcePill: {
     borderWidth: 1,
     borderRadius: 999,
@@ -560,7 +761,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  tabBtnActive: { borderColor: '#38bdf8', backgroundColor: '#0a2842' },
+  tabBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   tabText: {
     color: '#cbd5e1',
     fontWeight: '700',
@@ -570,7 +771,8 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   tabTextLight: { color: '#334155' },
-  tabTextActive: { color: '#bae6fd' },
+  tabTextActive: { color: '#eff6ff' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { marginBottom: 8 },
   filtersContent: { alignItems: 'center', paddingVertical: 6 },
   dateRangeCard: {
@@ -598,7 +800,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipText: {
     color: '#cbd5e1',
     fontSize: 12,
@@ -608,7 +810,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActive: { color: '#eff6ff' },
   metaWrap: { marginBottom: 8, paddingHorizontal: 2 },
   metaText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
   metaTextLight: { color: '#475569' },

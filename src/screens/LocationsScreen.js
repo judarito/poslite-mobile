@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -186,25 +187,17 @@ export default function LocationsScreen({ tenant, offlineMode, pageSize = 20 }) 
               placeholder="Direccion"
               placeholderTextColor="#64748b"
             />
-            <View style={styles.chipsRow}>
-              {LOCATION_TYPES.map((type) => {
-                const active = form.type === type;
-                return (
-                  <Pressable
-                    key={type}
-                    style={[
-                      styles.filterChip,
-                      isLightTheme && styles.filterChipLight,
-                      active && styles.filterChipActive,
-                      active && isLightTheme && styles.filterChipActiveLight,
-                    ]}
-                    onPress={() => setForm((prev) => ({ ...prev, type }))}
-                  >
-                    <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive, active && isLightTheme && styles.filterChipTextActiveLight]}>{type}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <SearchableSelectField
+              title="Tipo de sede"
+              themeMode={themeMode}
+              valueLabel={form.type || 'STORE'}
+              placeholder="Seleccionar tipo"
+              searchPlaceholder="Buscar tipo..."
+              options={LOCATION_TYPES.map((type) => ({ key: type, label: type, searchText: type }))}
+              selectedKey={form.type}
+              onSelect={(nextValue) => setForm((prev) => ({ ...prev, type: nextValue || 'STORE' }))}
+              allowClear={false}
+            />
 
             <View style={styles.actions}>
               <Pressable
@@ -234,8 +227,8 @@ export default function LocationsScreen({ tenant, offlineMode, pageSize = 20 }) 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   searchInput: {
     minHeight: 42,
     borderRadius: 8,
@@ -247,10 +240,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   searchInputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
-  addBtn: { backgroundColor: '#f59e0b', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
-  addBtnText: { color: '#451a03', fontWeight: '700', fontSize: 12 },
-  addBtnLight: { backgroundColor: '#1d4ed8' },
-  addBtnTextLight: { color: '#eff6ff' },
+  addBtn: { backgroundColor: '#57d65a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  addBtnText: { color: '#062915', fontWeight: '700', fontSize: 12 },
+  addBtnLight: { backgroundColor: '#57d65a' },
+  addBtnTextLight: { color: '#062915' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -265,9 +258,9 @@ const styles = StyleSheet.create({
   meta: { color: '#94a3b8', marginTop: 2, fontSize: 12 },
   metaLight: { color: '#475569' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  secondaryBtn: { backgroundColor: '#1e40af', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
+  secondaryBtn: { backgroundColor: '#235ea9', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   secondaryBtnText: { color: '#dbeafe', fontWeight: '700', fontSize: 12 },
-  secondaryBtnLight: { backgroundColor: '#1d4ed8' },
+  secondaryBtnLight: { backgroundColor: '#235ea9' },
   secondaryBtnTextLight: { color: '#eff6ff' },
   dangerBtn: { backgroundColor: '#7f1d1d', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700', fontSize: 12 },
@@ -295,14 +288,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
-  primaryBtn: { marginTop: 14, backgroundColor: '#d97706', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
-  primaryBtnLight: { backgroundColor: '#1d4ed8' },
-  primaryBtnTextLight: { color: '#eff6ff' },
+  primaryBtn: { marginTop: 14, backgroundColor: '#57d65a', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
+  primaryBtnLight: { backgroundColor: '#57d65a' },
+  primaryBtnTextLight: { color: '#062915' },
   closeBtn: {
     marginTop: 10,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
@@ -319,13 +312,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
-  optionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
-  optionActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
+  optionActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
+  optionActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
 });

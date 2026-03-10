@@ -15,6 +15,11 @@ import {
 } from '../services/cashMenu.service';
 
 const STATUS_FILTERS = ['', 'OPEN', 'CLOSED', 'FORCE_CLOSED'];
+const STATUS_FILTER_LABELS = {
+  OPEN: 'Abiertas',
+  CLOSED: 'Cerradas',
+  FORCE_CLOSED: 'Cierre forzado',
+};
 
 export default function CashSessionsScreen({
   tenant,
@@ -237,36 +242,22 @@ export default function CashSessionsScreen({
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          {STATUS_FILTERS.map((status) => {
-            const active = (filters?.status || '') === status;
-            return (
-              <Pressable
-                key={status || 'all'}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ status })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {status || 'Todas'}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Estado"
+          themeMode={themeMode}
+          valueLabel="Todas"
+          clearLabel="Todas"
+          placeholder="Todas"
+          searchPlaceholder="Buscar estado..."
+          options={STATUS_FILTERS.filter(Boolean).map((status) => ({
+            key: status,
+            label: STATUS_FILTER_LABELS[status] || status,
+          }))}
+          selectedKey={filters?.status || ''}
+          onSelect={(nextValue) => updateFilters({ status: nextValue || '' })}
+        />
+      </View>
 
       <PaginatedList
         themeMode={themeMode}
@@ -292,7 +283,7 @@ export default function CashSessionsScreen({
               <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: item.status === 'OPEN' ? '#16a34a' : '#64748b' }]}>
                 <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.status}</Text>
               </View>
-              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#235ea9' }]}>
                 <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Apertura {money(item.opening_amount || 0)}</Text>
               </View>
               {item.status === 'CLOSED' ? (
@@ -531,8 +522,9 @@ export default function CashSessionsScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -543,13 +535,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -575,26 +567,23 @@ const styles = StyleSheet.create({
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
   badgeTextLight: { color: '#334155' },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  secondaryBtn: { backgroundColor: '#1e40af', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
+  secondaryBtn: { backgroundColor: '#235ea9', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   secondaryBtnText: { color: '#dbeafe', fontWeight: '700' },
-  secondaryBtnLight: { backgroundColor: '#1d4ed8' },
+  secondaryBtnLight: { backgroundColor: '#235ea9' },
   secondaryBtnTextLight: { color: '#eff6ff' },
   dangerBtn: { backgroundColor: '#7f1d1d', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
   dangerBtnLight: { backgroundColor: '#dc2626' },
   dangerBtnTextLight: { color: '#fff1f2' },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
-  fabLight: { backgroundColor: '#facc15' },
-  fabTextLight: { color: '#422006' },
+  fabText: { color: '#062915', fontWeight: '800' },
+  fabLight: { backgroundColor: '#57d65a' },
+  fabTextLight: { color: '#062915' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '88%',
@@ -607,7 +596,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
   modalTitleLight: { color: '#0f172a' },
   groupTitle: { color: '#93c5fd', marginTop: 10, marginBottom: 4, fontWeight: '700', fontSize: 13, textTransform: 'uppercase' },
-  groupTitleLight: { color: '#0369a1' },
+  groupTitleLight: { color: '#235ea9' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -628,21 +617,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 8,
   },
-  optionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  optionActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   optionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  optionActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  optionActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
   optionText: { color: '#cbd5e1', fontWeight: '600' },
   optionTextLight: { color: '#334155' },
-  optionTextActive: { color: '#bae6fd' },
-  optionTextActiveLight: { color: '#0369a1' },
-  primaryBtn: { marginTop: 14, backgroundColor: '#d97706', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
-  primaryBtnLight: { backgroundColor: '#1d4ed8' },
-  primaryBtnTextLight: { color: '#eff6ff' },
+  optionTextActive: { color: '#eff6ff' },
+  optionTextActiveLight: { color: '#235ea9' },
+  primaryBtn: { marginTop: 14, backgroundColor: '#57d65a', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
+  primaryBtnLight: { backgroundColor: '#57d65a' },
+  primaryBtnTextLight: { color: '#062915' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
@@ -659,18 +648,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   summaryCardLight: { borderColor: '#dbe4ef', backgroundColor: '#f8fafc' },
-  summaryTitle: { color: '#bae6fd', fontWeight: '700', marginBottom: 4, fontSize: 13 },
-  summaryTitleLight: { color: '#0369a1' },
+  summaryTitle: { color: '#eff6ff', fontWeight: '700', marginBottom: 4, fontSize: 13 },
+  summaryTitleLight: { color: '#235ea9' },
   summaryLine: { color: '#e2e8f0', fontSize: 12, marginTop: 2 },
   summaryLineLight: { color: '#334155' },
   differenceText: { fontSize: 14, fontWeight: '700', marginTop: 10 },
   infoCard: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: '#235ea9',
     borderRadius: 10,
     padding: 10,
-    backgroundColor: '#0b2942',
+    backgroundColor: '#235ea9',
     marginTop: 8,
   },
-  infoCardLight: { borderColor: '#93c5fd', backgroundColor: '#e0f2fe' },
+  infoCardLight: { borderColor: '#93c5fd', backgroundColor: '#eff6ff' },
 });

@@ -7,6 +7,9 @@ const ROUTE_SCREEN_MAP = {
   '/third_parties': 'ThirdParties',
   '/terceros': 'ThirdParties',
   '/customers': 'Customers',
+  '/clientes': 'Customers',
+  '/suppliers': 'Suppliers',
+  '/proveedores': 'Suppliers',
   '/layaway': 'Layaway',
   '/products': 'Products',
   '/categories': 'Categories',
@@ -27,10 +30,12 @@ const ROUTE_SCREEN_MAP = {
   '/reports/inventario': 'Reports',
   '/reports/financiero': 'Reports',
   '/reports/produccion': 'Reports',
+  '/ai-insights': 'AIInsights',
   '/setup': 'Setup',
   '/settings': 'Setup',
   '/tenant-config': 'TenantConfig',
   '/tenant-management': 'TenantManagement',
+  '/tenant_management': 'TenantManagement',
   '/locations': 'Locations',
   '/taxes': 'Taxes',
   '/tax-rules': 'TaxRules',
@@ -91,6 +96,11 @@ function normalizeRoute(route) {
   return text;
 }
 
+function flattenMenuItems(menuTree) {
+  const source = Array.isArray(menuTree) ? menuTree : [];
+  return source.flatMap((section) => [section, ...(Array.isArray(section?.children) ? section.children : [])]);
+}
+
 function mergeCoreMenuSections(menuTree) {
   const source = Array.isArray(menuTree) ? menuTree : [];
   const merged = source.map((section) => ({
@@ -122,6 +132,54 @@ function mergeCoreMenuSections(menuTree) {
 export function mapMenuItemToScreen(route) {
   const normalizedRoute = normalizeRoute(route);
   return ROUTE_SCREEN_MAP[normalizedRoute] || null;
+}
+
+export function normalizeMenuRoute(route) {
+  return normalizeRoute(route);
+}
+
+export function collectAllowedMenuRoutes(menuTree) {
+  const unique = new Set();
+  flattenMenuItems(menuTree).forEach((item) => {
+    const normalized = normalizeRoute(item?.route);
+    if (normalized) unique.add(normalized);
+  });
+  return Array.from(unique);
+}
+
+export function collectAllowedMobileScreens(menuTree) {
+  const unique = new Set();
+  flattenMenuItems(menuTree).forEach((item) => {
+    const targetScreen = String(item?.targetScreen || mapMenuItemToScreen(item?.route) || '').trim();
+    if (targetScreen) unique.add(targetScreen);
+  });
+  return Array.from(unique);
+}
+
+export function collectMenuScreenRouteHints(menuTree) {
+  const map = {};
+  flattenMenuItems(menuTree).forEach((item) => {
+    const targetScreen = String(item?.targetScreen || mapMenuItemToScreen(item?.route) || '').trim();
+    const normalizedRoute = normalizeRoute(item?.route);
+    if (!targetScreen || !normalizedRoute) return;
+    if (!Array.isArray(map[targetScreen])) {
+      map[targetScreen] = [];
+    }
+    if (!map[targetScreen].includes(normalizedRoute)) {
+      map[targetScreen].push(normalizedRoute);
+    }
+  });
+  return map;
+}
+
+export function canAccessPathByMenu(path, allowedRoutes) {
+  if (!Array.isArray(allowedRoutes) || allowedRoutes.length === 0) return true;
+  const normalizedPath = normalizeRoute(path);
+  if (!normalizedPath) return false;
+  if (normalizedPath === '/' || normalizedPath === '/about') return true;
+  return allowedRoutes.some((menuRoute) => (
+    normalizedPath === menuRoute || normalizedPath.startsWith(`${menuRoute}/`)
+  ));
 }
 
 export function annotateMenuTreeWithSupport(menuTree) {

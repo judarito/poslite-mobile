@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import DatePickerField from '../components/DatePickerField';
 import PaginatedList from '../components/PaginatedList';
 import { usePaginatedList } from '../hooks/usePaginatedList';
@@ -43,6 +44,14 @@ const DATE_FILTERS = [
   { key: '7d', label: '7 dias', days: 7 },
   { key: '30d', label: '30 dias', days: 30 },
 ];
+const STATUS_FILTER_LABELS = {
+  '': 'Todos',
+  COMPLETED: 'Completadas',
+  VOIDED: 'Anuladas',
+  PARTIAL_RETURN: 'Devolucion parcial',
+  PENDING_SYNC: 'Pendiente sync',
+  FAILED_SYNC: 'Error sync',
+};
 
 function toStartOfDayIso(date) {
   const d = new Date(date);
@@ -154,6 +163,7 @@ export default function SalesHistoryScreen({
   const [locations, setLocations] = useState([]);
   const [fromDateInput, setFromDateInput] = useState('');
   const [toDateInput, setToDateInput] = useState('');
+  const [singleSelectFilter, setSingleSelectFilter] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editSale, setEditSale] = useState(null);
   const [editLines, setEditLines] = useState([]);
@@ -294,6 +304,56 @@ export default function SalesHistoryScreen({
     if (days <= 30) return '30d';
     return 'all';
   })();
+
+  const selectedStatusLabel = STATUS_FILTER_LABELS[String(filters?.status || '')] || 'Todos';
+  const selectedDateLabel = DATE_FILTERS.find((item) => item.key === activeDateFilterKey)?.label || 'Todo';
+  const selectedLocationLabel = (() => {
+    if (!filters?.location_id) return 'Todas las sedes';
+    const selected = (locations || []).find((loc) => loc.location_id === filters.location_id);
+    return selected?.name || 'Sede';
+  })();
+
+  const compactFilterOptions = (() => {
+    if (singleSelectFilter === 'status') {
+      return STATUS_FILTERS.map((value) => ({
+        key: value,
+        label: STATUS_FILTER_LABELS[String(value || '')] || String(value || ''),
+      }));
+    }
+    if (singleSelectFilter === 'date') {
+      return DATE_FILTERS.map((item) => ({ key: item.key, label: item.label }));
+    }
+    if (singleSelectFilter === 'location') {
+      return [{ key: '', label: 'Todas las sedes' }, ...(locations || []).map((loc) => ({ key: loc.location_id, label: loc.name }))];
+    }
+    return [];
+  })();
+
+  const closeSingleSelectFilter = () => setSingleSelectFilter('');
+  const selectCompactFilterOption = (value) => {
+    if (singleSelectFilter === 'status') {
+      updateFilters({ status: value });
+      closeSingleSelectFilter();
+      return;
+    }
+    if (singleSelectFilter === 'date') {
+      const picked = DATE_FILTERS.find((item) => item.key === value) || DATE_FILTERS[0];
+      updateFilters(resolveDateRangeByDays(picked.days));
+      closeSingleSelectFilter();
+      return;
+    }
+    if (singleSelectFilter === 'location') {
+      updateFilters({ location_id: value || '' });
+      closeSingleSelectFilter();
+    }
+  };
+
+  const isCompactFilterOptionActive = (value) => {
+    if (singleSelectFilter === 'status') return String(filters?.status || '') === String(value || '');
+    if (singleSelectFilter === 'date') return String(activeDateFilterKey || 'all') === String(value || 'all');
+    if (singleSelectFilter === 'location') return String(filters?.location_id || '') === String(value || '');
+    return false;
+  };
 
   const openDetail = async (saleId) => {
     if (!saleId || !tenant?.tenant_id) return;
@@ -835,41 +895,92 @@ export default function SalesHistoryScreen({
     updateFilters({ from_date: '', to_date: '' });
   };
 
+  const modalBodyStyles = [styles.modalBody, isLightTheme && styles.modalBodyLight];
+  const modalTitleStyles = [styles.modalTitle, isLightTheme && styles.modalTitleLight];
+  const modalMetaLineStyles = [styles.metaLine, isLightTheme && styles.metaLineLight];
+  const groupTitleStyles = [styles.groupTitle, isLightTheme && styles.groupTitleLight];
+  const detailRowStyles = [styles.detailRow, isLightTheme && styles.detailRowLight];
+  const returnLineCardStyles = [styles.returnLineCard, isLightTheme && styles.returnLineCardLight];
+  const selectorBtnBaseStyles = [styles.selectorBtn, isLightTheme && styles.selectorBtnLight];
+  const selectorBtnTextStyles = [styles.selectorBtnText, isLightTheme && styles.selectorBtnTextLight];
+  const qtyInputStyles = [styles.qtyInput, isLightTheme && styles.qtyInputLight];
+  const inputStyles = [styles.input, isLightTheme && styles.inputLight];
+  const refundCardStyles = [styles.refundCard, isLightTheme && styles.refundCardLight];
+  const methodChipBaseStyles = [styles.methodChip, isLightTheme && styles.methodChipLight];
+  const methodChipTextStyles = [styles.methodChipText, isLightTheme && styles.methodChipTextLight];
+  const closeBtnStyles = [styles.closeBtn, isLightTheme && styles.closeBtnLight];
+  const voidModalCardStyles = [styles.voidModalCard, isLightTheme && styles.voidModalCardLight];
+
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        {STATUS_FILTERS.map((s) => {
-          const active = (filters?.status || '') === s;
-          const label = s || 'TODOS';
-          return (
-            <Pressable
-              key={label}
-              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-              onPress={() => updateFilters({ status: s })}
+      <View style={[styles.quickFiltersCard, isLightTheme && styles.quickFiltersCardLight]}>
+        <Text style={[styles.quickFiltersTitle, isLightTheme && styles.quickFiltersTitleLight]}>Filtros rapidos</Text>
+        <View style={styles.quickFiltersRow}>
+          <Pressable
+            style={[
+              styles.compactFilterBtn,
+              isLightTheme && styles.compactFilterBtnLight,
+              Boolean(filters?.status) && styles.compactFilterBtnActive,
+            ]}
+            onPress={() => setSingleSelectFilter('status')}
+          >
+            <Text
+              style={[
+                styles.compactFilterBtnText,
+                isLightTheme && styles.compactFilterBtnTextLight,
+                Boolean(filters?.status) && styles.compactFilterBtnTextActive,
+              ]}
+              numberOfLines={1}
             >
-              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              Estado: {selectedStatusLabel}
+            </Text>
+            <Text style={[styles.compactFilterChevron, isLightTheme && styles.compactFilterChevronLight]}>▼</Text>
+          </Pressable>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        {DATE_FILTERS.map((item) => {
-          const active = activeDateFilterKey === item.key;
-          const range = resolveDateRangeByDays(item.days);
-          return (
-            <Pressable
-              key={item.key}
-              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-              onPress={() => updateFilters(range)}
+          <Pressable
+            style={[
+              styles.compactFilterBtn,
+              isLightTheme && styles.compactFilterBtnLight,
+              activeDateFilterKey !== 'all' && styles.compactFilterBtnActive,
+            ]}
+            onPress={() => setSingleSelectFilter('date')}
+          >
+            <Text
+              style={[
+                styles.compactFilterBtnText,
+                isLightTheme && styles.compactFilterBtnTextLight,
+                activeDateFilterKey !== 'all' && styles.compactFilterBtnTextActive,
+              ]}
+              numberOfLines={1}
             >
-              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+              Periodo: {selectedDateLabel}
+            </Text>
+            <Text style={[styles.compactFilterChevron, isLightTheme && styles.compactFilterChevronLight]}>▼</Text>
+          </Pressable>
+        </View>
+
+        <Pressable
+          style={[
+            styles.compactFilterBtn,
+            styles.compactFilterBtnFull,
+            isLightTheme && styles.compactFilterBtnLight,
+            Boolean(filters?.location_id) && styles.compactFilterBtnActive,
+          ]}
+          onPress={() => setSingleSelectFilter('location')}
+        >
+          <Text
+            style={[
+              styles.compactFilterBtnText,
+              isLightTheme && styles.compactFilterBtnTextLight,
+              Boolean(filters?.location_id) && styles.compactFilterBtnTextActive,
+            ]}
+            numberOfLines={1}
+          >
+            Sede: {selectedLocationLabel}
+          </Text>
+          <Text style={[styles.compactFilterChevron, isLightTheme && styles.compactFilterChevronLight]}>▼</Text>
+        </Pressable>
+      </View>
 
       <View style={[styles.dateRangeCard, isLightTheme && styles.dateRangeCardLight]}>
         <Text style={[styles.dateRangeTitle, isLightTheme && styles.dateRangeTitleLight]}>Rango de fechas</Text>
@@ -891,38 +1002,66 @@ export default function SalesHistoryScreen({
         </View>
         <View style={styles.dateActionsRow}>
           <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={applyCustomDateRange}>
-            <Text style={styles.actionBtnText}>Aplicar</Text>
+            <View style={styles.actionBtnContent}>
+              <Ionicons name="checkmark-done-outline" size={13} style={styles.actionBtnIcon} />
+              <Text style={styles.actionBtnText}>Aplicar</Text>
+            </View>
           </Pressable>
           <Pressable style={[styles.actionBtn, styles.printBtn]} onPress={clearCustomDateRange}>
-            <Text style={styles.actionBtnText}>Limpiar</Text>
+            <View style={styles.actionBtnContent}>
+              <Ionicons name="refresh-outline" size={13} style={styles.actionBtnIcon} />
+              <Text style={styles.actionBtnText}>Limpiar</Text>
+            </View>
           </Pressable>
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <Pressable
-          style={[styles.filterChip, isLightTheme && styles.filterChipLight, !filters?.location_id && styles.filterChipActive]}
-          onPress={() => updateFilters({ location_id: '' })}
-        >
-          <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, !filters?.location_id && styles.filterChipTextActive]}>
-            Todas las sedes
-          </Text>
-        </Pressable>
-        {locations.map((loc) => {
-          const active = filters?.location_id === loc.location_id;
-          return (
+      <Modal visible={Boolean(singleSelectFilter)} transparent animationType="fade" onRequestClose={closeSingleSelectFilter}>
+        <View style={styles.pickerOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSingleSelectFilter} />
+          <View style={[styles.pickerSheet, isLightTheme && styles.pickerSheetLight]}>
+            <Text style={[styles.pickerTitle, isLightTheme && styles.pickerTitleLight]}>
+              {singleSelectFilter === 'status'
+                ? 'Seleccionar estado'
+                : singleSelectFilter === 'date'
+                  ? 'Seleccionar periodo'
+                  : 'Seleccionar sede'}
+            </Text>
+            <ScrollView style={styles.pickerOptions} contentContainerStyle={styles.pickerOptionsContent}>
+              {compactFilterOptions.map((option) => {
+                const active = isCompactFilterOptionActive(option.key);
+                return (
+                  <Pressable
+                    key={`${singleSelectFilter}-${String(option.key)}`}
+                    style={[
+                      styles.pickerOption,
+                      isLightTheme && styles.pickerOptionLight,
+                      active && styles.pickerOptionActive,
+                    ]}
+                    onPress={() => selectCompactFilterOption(option.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.pickerOptionText,
+                        isLightTheme && styles.pickerOptionTextLight,
+                        active && styles.pickerOptionTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
             <Pressable
-              key={loc.location_id}
-              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-              onPress={() => updateFilters({ location_id: loc.location_id })}
+              style={[styles.pickerCloseBtn, isLightTheme && styles.pickerCloseBtnLight]}
+              onPress={closeSingleSelectFilter}
             >
-              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>
-                {loc.name}
-              </Text>
+              <Text style={[styles.pickerCloseBtnText, isLightTheme && styles.pickerCloseBtnTextLight]}>Cerrar</Text>
             </Pressable>
-          );
-        })}
-      </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <PaginatedList
         themeMode={themeMode}
@@ -986,10 +1125,16 @@ export default function SalesHistoryScreen({
               {!sale.is_local_pending ? (
                 <>
                   <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={() => openDetail(sale.sale_id)}>
-                    <Text style={styles.actionBtnText}>Detalle</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="document-text-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Detalle</Text>
+                    </View>
                   </Pressable>
                   <Pressable style={[styles.actionBtn, styles.printBtn]} onPress={() => handlePrintSale(sale)}>
-                    <Text style={styles.actionBtnText}>Imprimir</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="print-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Imprimir</Text>
+                    </View>
                   </Pressable>
                 </>
               ) : null}
@@ -1001,7 +1146,10 @@ export default function SalesHistoryScreen({
                       disabled={processing}
                       onPress={() => retryPendingSale(sale)}
                     >
-                      <Text style={styles.actionBtnText}>Reintentar</Text>
+                      <View style={styles.actionBtnContent}>
+                        <Ionicons name="refresh-outline" size={13} style={styles.actionBtnIcon} />
+                        <Text style={styles.actionBtnText}>Reintentar</Text>
+                      </View>
                     </Pressable>
                   ) : null}
                   {sale.status === 'FAILED_SYNC' ? (
@@ -1010,7 +1158,10 @@ export default function SalesHistoryScreen({
                       disabled={processing}
                       onPress={() => openEditPendingSale(sale)}
                     >
-                      <Text style={styles.actionBtnText}>Editar</Text>
+                      <View style={styles.actionBtnContent}>
+                        <Ionicons name="create-outline" size={13} style={styles.actionBtnIcon} />
+                        <Text style={styles.actionBtnText}>Editar</Text>
+                      </View>
                     </Pressable>
                   ) : null}
                   <Pressable
@@ -1018,7 +1169,10 @@ export default function SalesHistoryScreen({
                     disabled={processing}
                     onPress={() => discardPendingSale(sale)}
                   >
-                    <Text style={styles.actionBtnText}>Descartar</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="trash-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Descartar</Text>
+                    </View>
                   </Pressable>
                 </>
               ) : null}
@@ -1030,14 +1184,23 @@ export default function SalesHistoryScreen({
                       onPress={() => retryFe(sale)}
                       disabled={processing}
                     >
-                      <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                      <View style={styles.actionBtnContent}>
+                        <Ionicons name="sync-outline" size={13} style={styles.actionBtnIcon} />
+                        <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                      </View>
                     </Pressable>
                   ) : null}
                   <Pressable style={[styles.actionBtn, styles.returnBtn]} onPress={() => openReturnDialog(sale)}>
-                    <Text style={styles.actionBtnText}>Devolver</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="arrow-undo-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Devolver</Text>
+                    </View>
                   </Pressable>
                   <Pressable style={[styles.actionBtn, styles.voidBtn]} onPress={() => confirmVoid(sale)}>
-                    <Text style={styles.actionBtnText}>Anular</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="close-circle-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Anular</Text>
+                    </View>
                   </Pressable>
                 </>
               ) : null}
@@ -1053,23 +1216,23 @@ export default function SalesHistoryScreen({
         onRequestClose={() => setDetail(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={modalBodyStyles}>
             {loadingDetail ? (
               <ActivityIndicator color="#38bdf8" />
             ) : (
               <ScrollView>
-                <Text style={styles.modalTitle}>Detalle de venta</Text>
-                <Text style={styles.metaLine}>{detail?.sale_number || '-'}</Text>
-                <Text style={styles.metaLine}>{detail?.customer?.full_name || 'Consumidor final'}</Text>
-                <Text style={styles.metaLine}>Total: {formatMoney(detail?.total || 0)}</Text>
-                <Text style={styles.metaLine}>Documento: {detail?.invoice_type || 'FV'}</Text>
-                {detail?.dian_status ? <Text style={styles.metaLine}>Estado DIAN: {detail.dian_status}</Text> : null}
-                {detail?.cufe ? <Text style={styles.metaLine}>CUFE: {detail.cufe}</Text> : null}
+                <Text style={modalTitleStyles}>Detalle de venta</Text>
+                <Text style={modalMetaLineStyles}>{detail?.sale_number || '-'}</Text>
+                <Text style={modalMetaLineStyles}>{detail?.customer?.full_name || 'Consumidor final'}</Text>
+                <Text style={modalMetaLineStyles}>Total: {formatMoney(detail?.total || 0)}</Text>
+                <Text style={modalMetaLineStyles}>Documento: {detail?.invoice_type || 'FV'}</Text>
+                {detail?.dian_status ? <Text style={modalMetaLineStyles}>Estado DIAN: {detail.dian_status}</Text> : null}
+                {detail?.cufe ? <Text style={modalMetaLineStyles}>CUFE: {detail.cufe}</Text> : null}
                 {detail?.dian_consecutive ? (
-                  <Text style={styles.metaLine}>Consecutivo DIAN: {detail.dian_consecutive}</Text>
+                  <Text style={modalMetaLineStyles}>Consecutivo DIAN: {detail.dian_consecutive}</Text>
                 ) : null}
                 {detail?.third_party?.legal_name ? (
-                  <Text style={styles.metaLine}>
+                  <Text style={modalMetaLineStyles}>
                     Receptor FE: {detail.third_party.legal_name} ({detail.third_party.document_number || 'N/D'})
                   </Text>
                 ) : null}
@@ -1079,31 +1242,34 @@ export default function SalesHistoryScreen({
                     disabled={processing}
                     onPress={() => retryFe(detail)}
                   >
-                    <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                    <View style={styles.actionBtnContent}>
+                      <Ionicons name="sync-outline" size={13} style={styles.actionBtnIcon} />
+                      <Text style={styles.actionBtnText}>Reintentar FE</Text>
+                    </View>
                   </Pressable>
                 ) : null}
 
-                <Text style={styles.groupTitle}>Lineas</Text>
+                <Text style={groupTitleStyles}>Lineas</Text>
                 {(detail?.sale_lines || []).map((line) => (
-                  <View key={line.sale_line_id} style={styles.detailRow}>
-                    <Text style={styles.metaLine}>
+                  <View key={line.sale_line_id} style={detailRowStyles}>
+                    <Text style={modalMetaLineStyles}>
                       {line.variant?.product?.name || line.variant?.variant_name || 'Producto'} x {line.quantity}
                     </Text>
-                    <Text style={styles.metaLine}>{formatMoney(line.line_total || 0)}</Text>
+                    <Text style={modalMetaLineStyles}>{formatMoney(line.line_total || 0)}</Text>
                   </View>
                 ))}
 
-                <Text style={styles.groupTitle}>Pagos</Text>
+                <Text style={groupTitleStyles}>Pagos</Text>
                 {(detail?.sale_payments || []).map((payment) => (
-                  <View key={payment.sale_payment_id} style={styles.detailRow}>
-                    <Text style={styles.metaLine}>{payment.payment_method?.name || 'Pago'}</Text>
-                    <Text style={styles.metaLine}>{formatMoney(payment.amount || 0)}</Text>
+                  <View key={payment.sale_payment_id} style={detailRowStyles}>
+                    <Text style={modalMetaLineStyles}>{payment.payment_method?.name || 'Pago'}</Text>
+                    <Text style={modalMetaLineStyles}>{formatMoney(payment.amount || 0)}</Text>
                   </View>
                 ))}
               </ScrollView>
             )}
 
-            <Pressable onPress={() => setDetail(null)} style={styles.closeBtn}>
+            <Pressable onPress={() => setDetail(null)} style={closeBtnStyles}>
               <Text style={styles.closeBtnText}>Cerrar</Text>
             </Pressable>
           </View>
@@ -1117,25 +1283,28 @@ export default function SalesHistoryScreen({
         onRequestClose={() => setReturnDialogOpen(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={modalBodyStyles}>
             <ScrollView>
-              <Text style={styles.modalTitle}>Crear Devolución</Text>
+              <Text style={modalTitleStyles}>Crear Devolución</Text>
               <TextInput
                 value={returnReason}
                 onChangeText={setReturnReason}
                 placeholder="Motivo de devolución"
                 placeholderTextColor="#64748b"
-                style={[styles.input, { minHeight: 56 }]}
+                style={[...inputStyles, { minHeight: 56 }]}
                 multiline
               />
 
-              <Text style={styles.groupTitle}>Productos</Text>
+              <Text style={groupTitleStyles}>Productos</Text>
               {(returnSale?.sale_lines || []).map((line) => {
                 const maxQty = getLineMaxReturnQty(line);
                 return (
-                  <View key={line.sale_line_id} style={styles.returnLineCard}>
+                  <View key={line.sale_line_id} style={returnLineCardStyles}>
                     <Pressable
-                      style={[styles.selectorBtn, line.selected && styles.selectorBtnActive]}
+                      style={[
+                        ...selectorBtnBaseStyles,
+                        line.selected && styles.selectorBtnActive,
+                      ]}
                       onPress={() => {
                         setReturnSale((prev) => ({
                           ...prev,
@@ -1145,16 +1314,16 @@ export default function SalesHistoryScreen({
                         }));
                       }}
                     >
-                      <Text style={styles.selectorBtnText}>{line.selected ? 'Seleccionado' : 'Seleccionar'}</Text>
+                      <Text style={selectorBtnTextStyles}>{line.selected ? 'Seleccionado' : 'Seleccionar'}</Text>
                     </Pressable>
-                    <Text style={styles.metaLine}>
+                    <Text style={modalMetaLineStyles}>
                       {line.variant?.product?.name || line.variant?.variant_name || 'Producto'}
                     </Text>
-                    <Text style={styles.metaLine}>Vendida: {line.quantity} · Ya devuelta: {line.returned_qty || 0}</Text>
+                    <Text style={modalMetaLineStyles}>Vendida: {line.quantity} · Ya devuelta: {line.returned_qty || 0}</Text>
                     <View style={styles.qtyEditorRow}>
-                      <Text style={styles.metaLine}>Devolver</Text>
+                      <Text style={modalMetaLineStyles}>Devolver</Text>
                       <TextInput
-                        style={styles.qtyInput}
+                        style={qtyInputStyles}
                         value={String(line.return_qty ?? maxQty)}
                         onChangeText={(value) => {
                           let qty = Number(value || 0);
@@ -1176,17 +1345,20 @@ export default function SalesHistoryScreen({
                 );
               })}
 
-              <Text style={styles.groupTitle}>Reembolso</Text>
-              <Text style={styles.metaLine}>
+              <Text style={groupTitleStyles}>Reembolso</Text>
+              <Text style={modalMetaLineStyles}>
                 Total devolución: {formatMoney(getExpectedRefundTotal())} · Total reembolso: {formatMoney(getRefundsTotal())}
               </Text>
               <Pressable style={[styles.actionBtn, styles.detailBtn, { marginTop: 6 }]} onPress={distributeRefundsEqually}>
-                <Text style={styles.actionBtnText}>Auto distribuir</Text>
+                <View style={styles.actionBtnContent}>
+                  <Ionicons name="git-compare-outline" size={13} style={styles.actionBtnIcon} />
+                  <Text style={styles.actionBtnText}>Auto distribuir</Text>
+                </View>
               </Pressable>
 
               {returnRefunds.map((refund, idx) => (
-                <View key={`refund-${idx}`} style={styles.refundCard}>
-                  <Text style={styles.metaLine}>Método</Text>
+                <View key={`refund-${idx}`} style={refundCardStyles}>
+                  <Text style={modalMetaLineStyles}>Método</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     <View style={styles.methodChipsRow}>
                       {paymentMethods.map((method) => {
@@ -1194,7 +1366,11 @@ export default function SalesHistoryScreen({
                         return (
                           <Pressable
                             key={`${idx}-${method.payment_method_id}`}
-                            style={[styles.methodChip, active && styles.methodChipActive]}
+                            style={[
+                              ...methodChipBaseStyles,
+                              active && styles.methodChipActive,
+                              active && isLightTheme && styles.methodChipActiveLight,
+                            ]}
                             onPress={() => {
                               setReturnRefunds((prev) =>
                                 prev.map((r, i) =>
@@ -1203,7 +1379,7 @@ export default function SalesHistoryScreen({
                               );
                             }}
                           >
-                            <Text style={[styles.methodChipText, active && styles.methodChipTextActive]}>
+                            <Text style={[...methodChipTextStyles, active && styles.methodChipTextActive]}>
                               {method.name}
                             </Text>
                           </Pressable>
@@ -1213,7 +1389,7 @@ export default function SalesHistoryScreen({
                   </ScrollView>
 
                   <TextInput
-                    style={styles.input}
+                    style={inputStyles}
                     value={String(refund.amount || '')}
                     onChangeText={(value) => {
                       setReturnRefunds((prev) =>
@@ -1225,7 +1401,7 @@ export default function SalesHistoryScreen({
                     keyboardType="numeric"
                   />
                   <TextInput
-                    style={styles.input}
+                    style={inputStyles}
                     value={refund.reference || ''}
                     onChangeText={(value) => {
                       setReturnRefunds((prev) =>
@@ -1250,7 +1426,10 @@ export default function SalesHistoryScreen({
                         ]);
                       }}
                     >
-                      <Text style={styles.actionBtnText}>+ Metodo</Text>
+                      <View style={styles.actionBtnContent}>
+                        <Ionicons name="add-circle-outline" size={13} style={styles.actionBtnIcon} />
+                        <Text style={styles.actionBtnText}>+ Metodo</Text>
+                      </View>
                     </Pressable>
                     <Pressable
                       style={[styles.actionBtn, styles.voidBtn, returnRefunds.length <= 1 && styles.pageBtnDisabled]}
@@ -1259,18 +1438,24 @@ export default function SalesHistoryScreen({
                         setReturnRefunds((prev) => prev.filter((_, i) => i !== idx));
                       }}
                     >
-                      <Text style={styles.actionBtnText}>Quitar</Text>
+                      <View style={styles.actionBtnContent}>
+                        <Ionicons name="remove-circle-outline" size={13} style={styles.actionBtnIcon} />
+                        <Text style={styles.actionBtnText}>Quitar</Text>
+                      </View>
                     </Pressable>
                   </View>
                 </View>
               ))}
 
               <Pressable style={[styles.actionBtn, styles.returnBtn, { marginTop: 10 }]} onPress={processReturn} disabled={processing}>
-                <Text style={styles.actionBtnText}>{processing ? 'Procesando...' : 'Procesar devolución'}</Text>
+                <View style={styles.actionBtnContent}>
+                  <Ionicons name={processing ? 'hourglass-outline' : 'arrow-undo-outline'} size={13} style={styles.actionBtnIcon} />
+                  <Text style={styles.actionBtnText}>{processing ? 'Procesando...' : 'Procesar devolución'}</Text>
+                </View>
               </Pressable>
             </ScrollView>
 
-            <Pressable onPress={() => setReturnDialogOpen(false)} style={styles.closeBtn}>
+            <Pressable onPress={() => setReturnDialogOpen(false)} style={closeBtnStyles}>
               <Text style={styles.closeBtnText}>Cerrar</Text>
             </Pressable>
           </View>
@@ -1284,17 +1469,23 @@ export default function SalesHistoryScreen({
         onRequestClose={() => setVoidDialogOpen(false)}
       >
         <View style={styles.modalOverlayCenter}>
-          <View style={styles.voidModalCard}>
-            <Text style={styles.modalTitle}>Anular Venta</Text>
-            <Text style={styles.metaLine}>
+          <View style={voidModalCardStyles}>
+            <Text style={modalTitleStyles}>Anular Venta</Text>
+            <Text style={modalMetaLineStyles}>
               ¿Anular venta #{saleToVoid?.sale_number || '-'} por {formatMoney(saleToVoid?.total || 0)}?
             </Text>
             <View style={styles.inlineActions}>
               <Pressable style={[styles.actionBtn, styles.detailBtn]} onPress={() => setVoidDialogOpen(false)}>
-                <Text style={styles.actionBtnText}>Cancelar</Text>
+                <View style={styles.actionBtnContent}>
+                  <Ionicons name="close-outline" size={13} style={styles.actionBtnIcon} />
+                  <Text style={styles.actionBtnText}>Cancelar</Text>
+                </View>
               </Pressable>
               <Pressable style={[styles.actionBtn, styles.voidBtn]} onPress={doVoidSale} disabled={processing}>
-                <Text style={styles.actionBtnText}>{processing ? 'Anulando...' : 'Anular'}</Text>
+                <View style={styles.actionBtnContent}>
+                  <Ionicons name={processing ? 'hourglass-outline' : 'close-circle-outline'} size={13} style={styles.actionBtnIcon} />
+                  <Text style={styles.actionBtnText}>{processing ? 'Anulando...' : 'Anular'}</Text>
+                </View>
               </Pressable>
             </View>
           </View>
@@ -1308,19 +1499,19 @@ export default function SalesHistoryScreen({
         onRequestClose={() => setEditDialogOpen(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={modalBodyStyles}>
             <ScrollView>
-              <Text style={styles.modalTitle}>Editar venta offline</Text>
-              <Text style={styles.metaLine}>Ajusta cantidades para reintentar sincronizacion.</Text>
+              <Text style={modalTitleStyles}>Editar venta offline</Text>
+              <Text style={modalMetaLineStyles}>Ajusta cantidades para reintentar sincronizacion.</Text>
               {editLines.map((line, idx) => (
-                <View key={line.key} style={styles.returnLineCard}>
-                  <Text style={styles.metaLine}>Variante: {line.variant_id?.slice(0, 8) || '-'}</Text>
-                  <Text style={styles.metaLine}>Precio: {formatMoney(line.unit_price || 0)}</Text>
-                  <Text style={styles.metaLine}>Descuento: {formatMoney(line.discount || 0)}</Text>
+                <View key={line.key} style={returnLineCardStyles}>
+                  <Text style={modalMetaLineStyles}>Variante: {line.variant_id?.slice(0, 8) || '-'}</Text>
+                  <Text style={modalMetaLineStyles}>Precio: {formatMoney(line.unit_price || 0)}</Text>
+                  <Text style={modalMetaLineStyles}>Descuento: {formatMoney(line.discount || 0)}</Text>
                   <View style={styles.qtyEditorRow}>
-                    <Text style={styles.metaLine}>Cantidad</Text>
+                    <Text style={modalMetaLineStyles}>Cantidad</Text>
                     <TextInput
-                      style={styles.qtyInput}
+                      style={qtyInputStyles}
                       value={String(line.qty || 0)}
                       onChangeText={(value) => {
                         const qty = Math.max(0, Math.round(Number(value || 0)));
@@ -1339,11 +1530,14 @@ export default function SalesHistoryScreen({
                 onPress={saveEditedPendingSale}
                 disabled={processing}
               >
-                <Text style={styles.actionBtnText}>{processing ? 'Guardando...' : 'Guardar y reintentar'}</Text>
+                <View style={styles.actionBtnContent}>
+                  <Ionicons name={processing ? 'hourglass-outline' : 'save-outline'} size={13} style={styles.actionBtnIcon} />
+                  <Text style={styles.actionBtnText}>{processing ? 'Guardando...' : 'Guardar y reintentar'}</Text>
+                </View>
               </Pressable>
             </ScrollView>
 
-            <Pressable onPress={() => setEditDialogOpen(false)} style={styles.closeBtn}>
+            <Pressable onPress={() => setEditDialogOpen(false)} style={closeBtnStyles}>
               <Text style={styles.closeBtnText}>Cerrar</Text>
             </Pressable>
           </View>
@@ -1354,9 +1548,87 @@ export default function SalesHistoryScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700', marginBottom: 10 },
+  quickFiltersCard: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  quickFiltersCardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
+  quickFiltersTitle: { color: '#e2e8f0', fontWeight: '700', marginBottom: 8, fontSize: 12, textTransform: 'uppercase' },
+  quickFiltersTitleLight: { color: '#0f172a' },
+  quickFiltersRow: { flexDirection: 'row', gap: 8 },
+  compactFilterBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    backgroundColor: '#0b1220',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  compactFilterBtnFull: { marginTop: 8 },
+  compactFilterBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  compactFilterBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
+  compactFilterBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600', flex: 1, marginRight: 8 },
+  compactFilterBtnTextLight: { color: '#334155' },
+  compactFilterBtnTextActive: { color: '#eff6ff' },
+  compactFilterChevron: { color: '#93c5fd', fontSize: 10, fontWeight: '700' },
+  compactFilterChevronLight: { color: '#235ea9' },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5,10,22,0.55)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    maxHeight: '62%',
+    backgroundColor: '#0d172d',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopWidth: 1,
+    borderColor: '#29436a',
+    padding: 14,
+  },
+  pickerSheetLight: { backgroundColor: '#f7fbff', borderColor: '#cfddf0' },
+  pickerTitle: { color: '#e5eeff', fontSize: 16, fontWeight: '800', marginBottom: 10 },
+  pickerTitleLight: { color: '#0f172a' },
+  pickerOptions: { maxHeight: 280 },
+  pickerOptionsContent: { paddingBottom: 8 },
+  pickerOption: {
+    borderWidth: 1,
+    borderColor: '#2d446a',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#121f37',
+    marginBottom: 8,
+  },
+  pickerOptionLight: { borderColor: '#cfddf0', backgroundColor: '#ffffff' },
+  pickerOptionActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
+  pickerOptionText: { color: '#d0dff9', fontWeight: '600' },
+  pickerOptionTextLight: { color: '#334155' },
+  pickerOptionTextActive: { color: '#eff6ff' },
+  pickerCloseBtn: {
+    marginTop: 4,
+    alignSelf: 'flex-end',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#5ea9ff',
+    backgroundColor: '#235ea9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  pickerCloseBtnLight: { borderColor: '#cfddf0', backgroundColor: '#ffffff' },
+  pickerCloseBtnText: { color: '#eff6ff', fontWeight: '700' },
+  pickerCloseBtnTextLight: { color: '#235ea9' },
   filtersScroll: { maxHeight: 40, marginBottom: 8 },
   filterChip: {
     borderRadius: 999,
@@ -1367,10 +1639,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActive: { backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' },
+  filterChipActive: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#082f49' },
+  filterChipTextActive: { color: '#eff6ff' },
   dateRangeCard: {
     backgroundColor: '#0f172a',
     borderWidth: 1,
@@ -1420,8 +1692,10 @@ const styles = StyleSheet.create({
   total: { color: '#22d3ee', fontSize: 18, fontWeight: '700', marginTop: 4 },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   actionBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
-  detailBtn: { backgroundColor: '#1e40af' },
-  printBtn: { backgroundColor: '#0369a1' },
+  actionBtnContent: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  actionBtnIcon: { color: '#e2e8f0' },
+  detailBtn: { backgroundColor: '#235ea9' },
+  printBtn: { backgroundColor: '#235ea9' },
   retryBtn: { backgroundColor: '#b45309' },
   returnBtn: { backgroundColor: '#a16207' },
   voidBtn: { backgroundColor: '#7f1d1d' },
@@ -1452,6 +1726,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: {
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderColor: '#dbe4ef',
+  },
   voidModalCard: {
     backgroundColor: '#0f172a',
     borderRadius: 12,
@@ -1459,8 +1738,14 @@ const styles = StyleSheet.create({
     borderColor: '#1e293b',
     padding: 14,
   },
+  voidModalCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   groupTitle: { color: '#22d3ee', marginTop: 12, marginBottom: 4, fontWeight: '700' },
+  groupTitleLight: { color: '#235ea9' },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1469,6 +1754,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#1e293b',
     paddingVertical: 6,
   },
+  detailRowLight: { borderBottomColor: '#e2e8f0' },
   returnLineCard: {
     borderWidth: 1,
     borderColor: '#1e293b',
@@ -1476,6 +1762,10 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
     backgroundColor: '#111827',
+  },
+  returnLineCardLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fafc',
   },
   selectorBtn: {
     alignSelf: 'flex-start',
@@ -1485,8 +1775,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 6,
   },
-  selectorBtnActive: { backgroundColor: '#0ea5e9' },
+  selectorBtnLight: { backgroundColor: '#e2e8f0' },
+  selectorBtnActive: { backgroundColor: '#235ea9' },
   selectorBtnText: { color: '#e2e8f0', fontWeight: '700', fontSize: 12 },
+  selectorBtnTextLight: { color: '#334155' },
   qtyEditorRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   qtyInput: {
     width: 90,
@@ -1497,6 +1789,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
     color: '#f8fafc',
     paddingHorizontal: 10,
+  },
+  qtyInputLight: {
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
   },
   input: {
     minHeight: 42,
@@ -1521,6 +1818,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  refundCardLight: {
+    borderColor: '#dbe4ef',
+    backgroundColor: '#f8fafc',
+  },
   methodChipsRow: { flexDirection: 'row', gap: 6 },
   methodChip: {
     borderWidth: 1,
@@ -1529,18 +1830,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  methodChipActive: { backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' },
+  methodChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  methodChipActive: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
+  methodChipActiveLight: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
   methodChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
-  methodChipTextActive: { color: '#082f49' },
+  methodChipTextLight: { color: '#334155' },
+  methodChipTextActive: { color: '#eff6ff' },
   refundActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
   inlineActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
   },
+  closeBtnLight: { backgroundColor: '#235ea9' },
   closeBtnText: { color: '#fff', fontWeight: '700' },
 });

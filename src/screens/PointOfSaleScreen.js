@@ -1602,7 +1602,10 @@ export default function PointOfSaleScreen({
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
         <View style={styles.aiHeaderRow}>
-          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Items</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="pricetags-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+            <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Items</Text>
+          </View>
           <Pressable
             onPress={() => setShowAiTools((prev) => !prev)}
             style={[styles.aiToggleBtn, isLightTheme && styles.aiToggleBtnLight]}
@@ -1611,7 +1614,7 @@ export default function PointOfSaleScreen({
               <Ionicons
                 name={showAiTools ? 'sparkles' : 'sparkles-outline'}
                 size={14}
-                color={isLightTheme ? '#0369a1' : '#bae6fd'}
+                color={isLightTheme ? '#235ea9' : '#eff6ff'}
               />
               <Text style={[styles.aiToggleText, isLightTheme && styles.aiToggleTextLight]}>
                 {showAiTools ? 'IA Ocultar' : 'IA'}
@@ -1631,7 +1634,7 @@ export default function PointOfSaleScreen({
                   isLightTheme && styles.aiIconBtnLight,
                 ]}
               >
-                <Ionicons name="camera-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Ionicons name="camera-outline" size={20} color={isLightTheme ? '#235ea9' : '#eff6ff'} />
                 <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Camara</Text>
               </Pressable>
 
@@ -1645,7 +1648,7 @@ export default function PointOfSaleScreen({
                   showChatComposer && styles.aiIconBtnActive,
                 ]}
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Ionicons name="chatbubble-ellipses-outline" size={20} color={isLightTheme ? '#235ea9' : '#eff6ff'} />
                 <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Chat</Text>
               </Pressable>
 
@@ -1659,7 +1662,7 @@ export default function PointOfSaleScreen({
                   processingVoiceOrder && styles.aiIconBtnActive,
                 ]}
               >
-                <Ionicons name="mic-outline" size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Ionicons name="mic-outline" size={20} color={isLightTheme ? '#235ea9' : '#eff6ff'} />
                 <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Voz</Text>
               </Pressable>
 
@@ -1671,7 +1674,7 @@ export default function PointOfSaleScreen({
                   showAiLogs && styles.aiIconBtnActive,
                 ]}
               >
-                <Ionicons name={showAiLogs ? 'receipt' : 'receipt-outline'} size={20} color={isLightTheme ? '#0369a1' : '#e0f2fe'} />
+                <Ionicons name={showAiLogs ? 'receipt' : 'receipt-outline'} size={20} color={isLightTheme ? '#235ea9' : '#eff6ff'} />
                 <Text style={[styles.aiIconBtnText, isLightTheme && styles.aiIconBtnTextLight]}>Logs</Text>
               </Pressable>
             </View>
@@ -1702,7 +1705,7 @@ export default function PointOfSaleScreen({
 
             {aiWorking ? (
               <View style={[styles.aiWorkingBanner, isLightTheme && styles.aiWorkingBannerLight]}>
-                <ActivityIndicator size="small" color={isLightTheme ? '#0369a1' : '#38bdf8'} />
+                <ActivityIndicator size="small" color={isLightTheme ? '#235ea9' : '#38bdf8'} />
                 <Text style={[styles.aiWorkingText, isLightTheme && styles.aiWorkingTextLight]}>
                   {aiWorkingLabel || 'Procesando comando IA...'}
                 </Text>
@@ -1890,7 +1893,10 @@ export default function PointOfSaleScreen({
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Cliente (opcional)</Text>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="person-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Cliente (opcional)</Text>
+        </View>
         <TextInput
           value={searchCustomer}
           onChangeText={setSearchCustomer}
@@ -1922,7 +1928,10 @@ export default function PointOfSaleScreen({
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
         <View style={styles.aiHeaderRow}>
-          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ventas en espera</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="pause-circle-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+            <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Ventas en espera</Text>
+          </View>
           <Pressable
             onPress={holdCurrentTicket}
             disabled={cart.length === 0}
@@ -1951,10 +1960,16 @@ export default function PointOfSaleScreen({
               </View>
               <View style={styles.draftActions}>
                 <Pressable style={[styles.actionMiniBtn, styles.detailMiniBtn]} onPress={() => resumeTicketDraft(draft.draft_id)}>
-                  <Text style={styles.actionMiniText}>Retomar</Text>
+                  <View style={styles.btnContentRow}>
+                    <Ionicons name="play-forward-outline" size={12} color="#e2e8f0" />
+                    <Text style={styles.actionMiniText}>Retomar</Text>
+                  </View>
                 </Pressable>
                 <Pressable style={[styles.actionMiniBtn, styles.removeMiniBtn]} onPress={() => discardTicketDraft(draft.draft_id)}>
-                  <Text style={styles.actionMiniText}>Quitar</Text>
+                  <View style={styles.btnContentRow}>
+                    <Ionicons name="trash-outline" size={12} color="#fee2e2" />
+                    <Text style={styles.actionMiniText}>Quitar</Text>
+                  </View>
                 </Pressable>
               </View>
             </View>
@@ -1963,14 +1978,17 @@ export default function PointOfSaleScreen({
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Carrito</Text>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="basket-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Carrito</Text>
+        </View>
         {cart.length === 0 ? <Text style={[styles.metaText, isLightTheme && styles.metaTextLight]}>Agrega productos para iniciar.</Text> : null}
         {cart.map((line, index) => (
           <View key={line.variant_id} style={[styles.lineCard, isLightTheme && styles.lineCardLight]}>
             <View style={styles.lineTop}>
               <Text style={[styles.lineTitle, isLightTheme && styles.lineTitleLight]}>{line.productName}</Text>
               <Pressable onPress={() => removeLine(index)}>
-                <Text style={styles.removeBtn}>x</Text>
+                <Ionicons name="trash-outline" size={16} style={styles.removeBtnIcon} />
               </Pressable>
             </View>
             <Text style={[styles.resultMeta, isLightTheme && styles.resultMetaLight]}>{line.variantName || 'Predeterminado'} · {line.sku}</Text>
@@ -2021,23 +2039,34 @@ export default function PointOfSaleScreen({
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Totales</Text>
-        <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Subtotal</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.subtotal)}</Text></View>
-        {totals.discount > 0 ? (
-          <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Descuento</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>-{formatMoney(totals.discount)}</Text></View>
-        ) : null}
-        <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>IVA</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.tax)}</Text></View>
-        {totals.roundingAdjustment !== 0 ? (
-          <View style={styles.totalRow}>
-            <Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Ajuste redondeo</Text>
-            <Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.roundingAdjustment)}</Text>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="calculator-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Totales</Text>
+        </View>
+        <View style={[styles.totalsCard, isLightTheme && styles.totalsCardLight]}>
+          <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Subtotal</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.subtotal)}</Text></View>
+          {totals.discount > 0 ? (
+            <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Descuento</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>-{formatMoney(totals.discount)}</Text></View>
+          ) : null}
+          <View style={styles.totalRow}><Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>IVA</Text><Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.tax)}</Text></View>
+          {totals.roundingAdjustment !== 0 ? (
+            <View style={styles.totalRow}>
+              <Text style={[styles.totalLabel, isLightTheme && styles.totalLabelLight]}>Ajuste redondeo</Text>
+              <Text style={[styles.totalValue, isLightTheme && styles.totalValueLight]}>{formatMoney(totals.roundingAdjustment)}</Text>
+            </View>
+          ) : null}
+          <View style={[styles.totalRowStrong, isLightTheme && styles.totalRowStrongLight]}>
+            <Text style={[styles.totalStrong, isLightTheme && styles.totalStrongLight]}>TOTAL</Text>
+            <Text style={[styles.totalStrongValue, isLightTheme && styles.totalStrongValueLight]}>{formatMoney(totals.total)}</Text>
           </View>
-        ) : null}
-        <View style={styles.totalRowStrong}><Text style={[styles.totalStrong, isLightTheme && styles.totalStrongLight]}>TOTAL</Text><Text style={styles.totalStrongValue}>{formatMoney(totals.total)}</Text></View>
+        </View>
       </View>
 
       <View style={[styles.panel, isLightTheme && styles.panelLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Formas de Pago</Text>
+        <View style={styles.sectionTitleRow}>
+          <Ionicons name="card-outline" size={15} color={isLightTheme ? '#235ea9' : '#93c5fd'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Formas de Pago</Text>
+        </View>
         {payments.map((p, i) => (
           <View key={`payment-${i}`} style={[styles.paymentRow, isLightTheme && styles.paymentRowLight]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.methodScroller}>
@@ -2067,7 +2096,7 @@ export default function PointOfSaleScreen({
               style={[styles.paymentRefInput, isLightTheme && styles.paymentInputLight]}
             />
             <Pressable onPress={() => removePayment(i)} style={styles.paymentRemove}>
-              <Text style={styles.removeBtn}>x</Text>
+              <Ionicons name="trash-outline" size={15} style={styles.removeBtnIcon} />
             </Pressable>
           </View>
         ))}
@@ -2107,7 +2136,7 @@ export default function PointOfSaleScreen({
         style={[styles.chargeBtn, (processing || cart.length === 0 || remaining > 0) && styles.btnDisabled]}
       >
         <View style={styles.btnContentRow}>
-          <Ionicons name={offlineMode ? 'cloud-upload-outline' : 'card-outline'} size={18} color="#082f49" />
+          <Ionicons name={offlineMode ? 'cloud-upload-outline' : 'card-outline'} size={18} color="#eff6ff" />
           <Text style={styles.chargeText}>
             {processing
               ? 'Procesando...'
@@ -2150,7 +2179,7 @@ export default function PointOfSaleScreen({
 const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
-    backgroundColor: '#0b0f14',
+    backgroundColor: '#060b16',
   },
   screenRootLight: {
     backgroundColor: '#f8fafc',
@@ -2158,7 +2187,7 @@ const styles = StyleSheet.create({
   container: {
     padding: 12,
     paddingBottom: 24,
-    backgroundColor: '#0b0f14',
+    backgroundColor: '#060b16',
   },
   containerLight: {
     backgroundColor: '#f8fafc',
@@ -2167,7 +2196,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0b0f14',
+    backgroundColor: '#060b16',
   },
   centeredLight: {
     backgroundColor: '#f8fafc',
@@ -2238,12 +2267,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   aiToggleText: {
-    color: '#bae6fd',
+    color: '#eff6ff',
     fontSize: 12,
     fontWeight: '700',
   },
   aiToggleTextLight: {
-    color: '#0369a1',
+    color: '#235ea9',
   },
   aiToolsWrap: {
     borderWidth: 1,
@@ -2271,7 +2300,7 @@ const styles = StyleSheet.create({
   },
   aiIconBtnLight: {
     borderColor: '#cbd5e1',
-    backgroundColor: '#e0f2fe',
+    backgroundColor: '#eff6ff',
   },
   aiIconBtnActive: {
     backgroundColor: '#0f766e',
@@ -2312,7 +2341,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   invoiceAgentBtn: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
@@ -2354,12 +2383,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   voicePreviewText: {
-    color: '#bae6fd',
+    color: '#eff6ff',
     fontSize: 12,
     marginBottom: 6,
   },
   voicePreviewTextLight: {
-    color: '#0369a1',
+    color: '#235ea9',
   },
   aiWorkingBanner: {
     flexDirection: 'row',
@@ -2368,18 +2397,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#334155',
     borderRadius: 8,
-    backgroundColor: '#082f49',
+    backgroundColor: '#eff6ff',
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginBottom: 6,
   },
   aiWorkingBannerLight: {
     borderColor: '#cbd5e1',
-    backgroundColor: '#e0f2fe',
+    backgroundColor: '#eff6ff',
   },
   aiWorkingText: {
     flex: 1,
-    color: '#bae6fd',
+    color: '#eff6ff',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -2456,12 +2485,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   invoiceSummaryTitle: {
-    color: '#bae6fd',
+    color: '#eff6ff',
     fontWeight: '700',
     marginBottom: 4,
   },
   invoiceSummaryTitleLight: {
-    color: '#0369a1',
+    color: '#235ea9',
   },
   invoiceSummaryLine: {
     color: '#cbd5e1',
@@ -2481,6 +2510,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 8,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   sectionTitleLight: {
     color: '#0f172a',
@@ -2601,7 +2635,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   detailMiniBtn: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
   },
   removeMiniBtn: {
     backgroundColor: '#7f1d1d',
@@ -2642,6 +2676,9 @@ const styles = StyleSheet.create({
     color: '#f87171',
     fontWeight: '800',
     fontSize: 16,
+  },
+  removeBtnIcon: {
+    color: '#f87171',
   },
   lineControls: {
     marginTop: 8,
@@ -2693,7 +2730,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   discountTypeBtnActive: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#235ea9',
   },
   discountTypeText: {
     color: '#f8fafc',
@@ -2726,6 +2763,17 @@ const styles = StyleSheet.create({
   lineTotalLight: {
     color: '#0f172a',
   },
+  totalsCard: {
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  totalsCardLight: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe4ef',
+  },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2738,6 +2786,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#334155',
     paddingTop: 8,
+  },
+  totalRowStrongLight: {
+    borderTopColor: '#cbd5e1',
   },
   totalLabel: {
     color: '#cbd5e1',
@@ -2764,6 +2815,9 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '800',
     lineHeight: 38,
+  },
+  totalStrongValueLight: {
+    color: '#0b63f3',
   },
   paymentRow: {
     marginBottom: 8,
@@ -2792,8 +2846,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   methodBtnActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: '#235ea9',
+    borderColor: '#235ea9',
   },
   methodBtnText: {
     color: '#f8fafc',
@@ -2861,7 +2915,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   quickCashExactBtn: {
-    borderColor: '#0369a1',
+    borderColor: '#235ea9',
     backgroundColor: '#0c4a6e',
   },
   quickCashText: {
@@ -2878,14 +2932,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   chargeBtn: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: '#235ea9',
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
     marginBottom: 8,
   },
   chargeText: {
-    color: '#082f49',
+    color: '#eff6ff',
     fontWeight: '800',
     fontSize: 17,
   },

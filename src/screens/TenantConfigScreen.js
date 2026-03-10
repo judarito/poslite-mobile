@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { getTenantConfig, saveTenantConfig } from '../services/setup.service';
 
 const TABS = [
@@ -135,30 +136,19 @@ export default function TenantConfigScreen({ tenant, offlineMode, themeMode = 'd
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          {TABS.map((entry) => {
-            const active = tab === entry.key;
-            return (
-              <Pressable
-                key={entry.key}
-                style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-                onPress={() => setTab(entry.key)}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                  ]}
-                >
-                  {entry.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Seccion"
+          themeMode={themeMode}
+          valueLabel="General"
+          placeholder="Seleccionar seccion"
+          searchPlaceholder="Buscar seccion..."
+          options={TABS.map((entry) => ({ key: entry.key, label: entry.label, searchText: entry.label }))}
+          selectedKey={tab}
+          onSelect={(nextValue) => setTab(nextValue || 'general')}
+          allowClear={false}
+        />
+      </View>
 
       <ScrollView>
         {tab === 'general' ? (
@@ -305,8 +295,9 @@ export default function TenantConfigScreen({ tenant, offlineMode, themeMode = 'd
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -317,11 +308,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
+  filterChipTextActive: { color: '#eff6ff' },
   card: {
     borderWidth: 1,
     borderColor: '#1f2937',
@@ -368,20 +359,19 @@ const styles = StyleSheet.create({
     borderColor: '#cbd5e1',
     backgroundColor: '#ffffff',
   },
-  segmentBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  segmentBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   segmentText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
   segmentTextLight: { color: '#334155' },
-  segmentTextActive: { color: '#bae6fd' },
+  segmentTextActive: { color: '#eff6ff' },
   meta: { color: '#94a3b8', marginTop: 8, fontSize: 12 },
   metaLight: { color: '#475569' },
   error: { color: '#f87171', marginTop: 8, fontSize: 13 },
   primaryBtn: {
-    marginTop: 10,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#57d65a',
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  primaryBtnLight: { backgroundColor: '#1d4ed8' },
-  primaryBtnText: { color: '#fff', fontWeight: '700' },
+  primaryBtnLight: { backgroundColor: '#57d65a' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
 });

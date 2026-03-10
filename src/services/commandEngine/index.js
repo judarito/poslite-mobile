@@ -1,4 +1,5 @@
 export { resolveSaleCommandFromText } from './commandEngine.service';
+export { resolveReportQueryFromText } from './reportQueryEngine.service';
 export {
   cancelVoskTranscription,
   getVoskSttStatus,

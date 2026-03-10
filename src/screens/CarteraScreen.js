@@ -215,8 +215,8 @@ export default function CarteraScreen({ tenant, userProfile, formatMoney, offlin
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700', marginBottom: 10 },
   titleLight: { color: '#0f172a' },
   summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   summaryCardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
   summaryLabel: { color: '#93c5fd', fontSize: 12, marginBottom: 3 },
-  summaryLabelLight: { color: '#1d4ed8' },
+  summaryLabelLight: { color: '#235ea9' },
   summaryValue: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
   summaryValueLight: { color: '#0f172a' },
   list: { flex: 1 },
@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
-  primaryBtn: { marginTop: 10, backgroundColor: '#0ea5e9', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#ecfeff', fontWeight: '700' },
+  primaryBtn: { marginTop: 10, backgroundColor: '#57d65a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   empty: { color: '#94a3b8', marginTop: 12, textAlign: 'center' },
   emptyLight: { color: '#64748b' },
   error: { color: '#f87171', marginBottom: 8 },
@@ -264,6 +264,6 @@ const styles = StyleSheet.create({
   modalBodyLight: { backgroundColor: '#f8fafc' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 6 },
   modalTitleLight: { color: '#0f172a' },
-  closeBtn: { marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#1d4ed8', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  closeBtn: { marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#235ea9', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   closeBtnText: { color: '#fff', fontWeight: '700' },
 });

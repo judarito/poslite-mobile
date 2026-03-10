@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { COMPONENT_THEME_COLORS } from '../theme/colors';
 
 export default function SearchableSelectField({
   title,
@@ -22,6 +23,7 @@ export default function SearchableSelectField({
   clearLabel = 'Sin seleccion',
   themeMode = 'dark',
   disabled = false,
+  allowClear = true,
 }) {
   const isLightTheme = themeMode === 'light';
   const [open, setOpen] = useState(false);
@@ -80,12 +82,12 @@ export default function SearchableSelectField({
               value={query}
               onChangeText={setQuery}
               placeholder={searchPlaceholder}
-              placeholderTextColor="#64748b"
+              placeholderTextColor={COMPONENT_THEME_COLORS.shared.placeholderText}
               autoCapitalize="none"
             />
 
             <FlatList
-              data={[{ key: '__clear__', label: clearLabel }, ...filteredOptions]}
+              data={allowClear ? [{ key: '__clear__', label: clearLabel }, ...filteredOptions] : filteredOptions}
               keyExtractor={(item) => String(item.key)}
               style={styles.list}
               keyboardShouldPersistTaps="handled"
@@ -93,13 +95,13 @@ export default function SearchableSelectField({
               contentContainerStyle={styles.listContent}
               renderItem={({ item }) => {
                 const active =
-                  item.key === '__clear__'
+                  allowClear && item.key === '__clear__'
                     ? selectedKey === null || selectedKey === undefined || selectedKey === ''
                     : String(selectedKey) === String(item.key);
                 return (
                   <Pressable
                     style={[styles.option, isLightTheme && styles.optionLight, active && styles.optionActive]}
-                    onPress={() => selectValue(item.key === '__clear__' ? null : item.key)}
+                    onPress={() => selectValue(allowClear && item.key === '__clear__' ? null : item.key)}
                   >
                     <Text style={[styles.optionText, isLightTheme && styles.optionTextLight, active && styles.optionTextActive]}>
                       {item.label}
@@ -124,78 +126,99 @@ export default function SearchableSelectField({
 
 const styles = StyleSheet.create({
   label: {
-    color: '#93c5fd',
+    color: COMPONENT_THEME_COLORS.selectableField.dark.label,
     marginTop: 12,
     marginBottom: 6,
     fontWeight: '700',
     fontSize: 13,
     textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  labelLight: { color: '#1d4ed8' },
+  labelLight: { color: COMPONENT_THEME_COLORS.selectableField.light.label },
   trigger: {
     minHeight: 44,
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    backgroundColor: '#111827',
-    paddingHorizontal: 10,
+    borderColor: COMPONENT_THEME_COLORS.selectableField.dark.triggerBorder,
+    borderRadius: 10,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.dark.triggerBackground,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  triggerLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  triggerLight: {
+    borderColor: COMPONENT_THEME_COLORS.selectableField.light.triggerBorder,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.light.triggerBackground,
+  },
   triggerDisabled: { opacity: 0.5 },
-  triggerText: { color: '#e2e8f0', fontWeight: '600', flex: 1, marginRight: 8 },
-  triggerTextLight: { color: '#334155' },
-  chevron: { color: '#93c5fd', fontSize: 12 },
-  chevronLight: { color: '#1d4ed8' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  triggerText: { color: COMPONENT_THEME_COLORS.selectableField.dark.triggerText, fontWeight: '600', flex: 1, marginRight: 8 },
+  triggerTextLight: { color: COMPONENT_THEME_COLORS.selectableField.light.triggerText },
+  chevron: { color: COMPONENT_THEME_COLORS.selectableField.dark.chevron, fontSize: 11 },
+  chevronLight: { color: COMPONENT_THEME_COLORS.selectableField.light.chevron },
+  overlay: { flex: 1, backgroundColor: COMPONENT_THEME_COLORS.shared.modalOverlay, justifyContent: 'flex-end' },
   sheet: {
     height: '78%',
-    backgroundColor: '#0f172a',
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.dark.sheetBackground,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    borderColor: COMPONENT_THEME_COLORS.selectableField.dark.sheetBorder,
     padding: 14,
     gap: 10,
   },
-  sheetLight: { backgroundColor: '#f8fafc' },
-  title: { color: '#f8fafc', fontSize: 17, fontWeight: '700' },
-  titleLight: { color: '#0f172a' },
+  sheetLight: {
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.light.sheetBackground,
+    borderColor: COMPONENT_THEME_COLORS.selectableField.light.sheetBorder,
+  },
+  title: { color: COMPONENT_THEME_COLORS.selectableField.dark.title, fontSize: 17, fontWeight: '800' },
+  titleLight: { color: COMPONENT_THEME_COLORS.selectableField.light.title },
   searchInput: {
     minHeight: 42,
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#111827',
-    color: '#f8fafc',
-    paddingHorizontal: 10,
+    borderColor: COMPONENT_THEME_COLORS.selectableField.dark.inputBorder,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.dark.inputBackground,
+    color: COMPONENT_THEME_COLORS.selectableField.dark.inputText,
+    paddingHorizontal: 12,
   },
-  searchInputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
+  searchInputLight: {
+    borderColor: COMPONENT_THEME_COLORS.selectableField.light.inputBorder,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.light.inputBackground,
+    color: COMPONENT_THEME_COLORS.selectableField.light.inputText,
+  },
   list: { flex: 1 },
   listContent: { paddingBottom: 8 },
   option: {
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: '#111827',
+    borderColor: COMPONENT_THEME_COLORS.selectableField.dark.optionBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.dark.optionBackground,
     marginBottom: 8,
   },
-  optionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  optionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
-  optionText: { color: '#cbd5e1', fontWeight: '600' },
-  optionTextLight: { color: '#334155' },
-  optionTextActive: { color: '#bae6fd' },
-  emptyText: { color: '#93a4b8', textAlign: 'center', paddingVertical: 12 },
-  emptyTextLight: { color: '#64748b' },
+  optionLight: {
+    borderColor: COMPONENT_THEME_COLORS.selectableField.light.optionBorder,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.light.optionBackground,
+  },
+  optionActive: {
+    borderColor: COMPONENT_THEME_COLORS.selectableField.active.singleBorder,
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.active.singleBackground,
+  },
+  optionText: { color: COMPONENT_THEME_COLORS.selectableField.dark.optionText, fontWeight: '600' },
+  optionTextLight: { color: COMPONENT_THEME_COLORS.selectableField.light.optionText },
+  optionTextActive: { color: COMPONENT_THEME_COLORS.selectableField.active.singleText },
+  emptyText: { color: COMPONENT_THEME_COLORS.selectableField.dark.emptyText, textAlign: 'center', paddingVertical: 12 },
+  emptyTextLight: { color: COMPONENT_THEME_COLORS.selectableField.light.emptyText },
   closeBtn: {
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: COMPONENT_THEME_COLORS.selectableField.dark.closeBtnBackground,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COMPONENT_THEME_COLORS.selectableField.dark.closeBtnBorder,
     marginTop: 4,
   },
-  closeBtnText: { color: '#fff', fontWeight: '700' },
+  closeBtnText: { color: COMPONENT_THEME_COLORS.selectableField.dark.closeBtnText, fontWeight: '700' },
 });

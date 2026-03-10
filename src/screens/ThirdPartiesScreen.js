@@ -11,7 +11,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -22,6 +24,10 @@ import {
 } from '../services/thirdParties.service';
 
 const TYPE_FILTERS = ['', 'customer', 'supplier'];
+const TYPE_FILTER_OPTIONS = TYPE_FILTERS.filter(Boolean).map((value) => ({
+  key: value,
+  label: value === 'customer' ? 'Clientes' : value === 'supplier' ? 'Proveedores' : value,
+}));
 
 const DOCUMENT_TYPES = [
   'CC',
@@ -81,13 +87,28 @@ function typeHelpText(type) {
   return 'Se usa como cliente y proveedor con la misma identificacion fiscal.';
 }
 
-export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 }) {
+function normalizeForcedType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'customer') return 'customer';
+  if (raw === 'supplier') return 'supplier';
+  return '';
+}
+
+export default function ThirdPartiesScreen({
+  tenant,
+  offlineMode,
+  pageSize = 20,
+  forcedType = '',
+  title = 'Terceros',
+}) {
   const themeMode = useThemeMode();
   const isLightTheme = themeMode === 'light';
+  const lockedType = normalizeForcedType(forcedType);
+  const hideTypeFilter = Boolean(lockedType);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState({ ...EMPTY_FORM, type: lockedType || EMPTY_FORM.type });
 
   const {
     items: rows,
@@ -106,12 +127,12 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
     pageSize,
     offlineMode,
     cacheNamespace: 'third-parties',
-    initialFilters: { type: '', search: '' },
+    initialFilters: { type: lockedType || '', search: '' },
     fetchPage: async ({ page: nextPage, pageSize: nextPageSize, filters: nextFilters }) => {
       const offset = (nextPage - 1) * nextPageSize;
       return listThirdParties({
         search: nextFilters?.search || '',
-        type: nextFilters?.type || null,
+        type: lockedType || nextFilters?.type || null,
         limit: nextPageSize,
         offset,
       });
@@ -119,14 +140,14 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
   });
 
   const openCreate = () => {
-    setForm({ ...EMPTY_FORM });
+    setForm({ ...EMPTY_FORM, type: lockedType || EMPTY_FORM.type });
     setModalOpen(true);
   };
 
   const openEdit = (item) => {
     setForm({
       third_party_id: item.third_party_id,
-      type: item.type || 'both',
+      type: lockedType || item.type || 'both',
       legal_name: item.legal_name || '',
       trade_name: item.trade_name || '',
       document_type: item.document_type || 'CC',
@@ -175,7 +196,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
     const payload = {
       tenant_id: tenant.tenant_id,
       third_party_id: form.third_party_id || undefined,
-      type: form.type || 'both',
+      type: lockedType || form.type || 'both',
       legal_name: legalName,
       trade_name: (form.trade_name || '').trim() || null,
       document_type: (form.document_type || 'CC').trim(),
@@ -264,25 +285,25 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
         </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        {TYPE_FILTERS.map((value) => {
-          const active = (filters?.type || '') === value;
-          const label = value ? value.toUpperCase() : 'TODOS';
-          return (
-            <Pressable
-              key={label}
-              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-              onPress={() => updateFilters({ type: value })}
-            >
-              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {!hideTypeFilter ? (
+        <View style={styles.filtersBlock}>
+          <SearchableSelectField
+            title="Tipo de tercero"
+            themeMode={themeMode}
+            valueLabel="Todos"
+            clearLabel="Todos"
+            placeholder="Todos"
+            searchPlaceholder="Buscar tipo..."
+            options={TYPE_FILTER_OPTIONS}
+            selectedKey={filters?.type || ''}
+            onSelect={(nextValue) => updateFilters({ type: nextValue || '' })}
+          />
+        </View>
+      ) : null}
 
       <PaginatedList
         themeMode={themeMode}
-        title="Terceros"
+        title={title}
         loading={loading}
         error={error}
         items={rows}
@@ -310,7 +331,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 
             <View style={styles.badgesRow}>
               {renderChip(item.is_active ? 'Activo' : 'Inactivo', true, item.is_active ? '#16a34a' : '#ef4444')}
-              {item.type === 'customer' || item.type === 'both' ? renderChip('Cliente', true, '#0ea5e9') : null}
+              {item.type === 'customer' || item.type === 'both' ? renderChip('Cliente', true, '#235ea9') : null}
               {item.type === 'supplier' || item.type === 'both' ? renderChip('Proveedor', true, '#f97316') : null}
               {Number(item.max_credit_amount || 0) > 0
                 ? renderChip(`Cupo ${Number(item.max_credit_amount).toLocaleString('es-CO')}`, true, '#f59e0b')
@@ -319,10 +340,16 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 
             <View style={styles.inlineActions}>
               <Pressable style={styles.secondaryBtn} onPress={() => openEdit(item)}>
-                <Text style={styles.secondaryBtnText}>Editar</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="create-outline" size={14} color="#dbeafe" />
+                  <Text style={styles.secondaryBtnText}>Editar</Text>
+                </View>
               </Pressable>
               <Pressable style={styles.dangerBtn} onPress={() => remove(item)}>
-                <Text style={styles.dangerBtnText}>Eliminar</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="trash-outline" size={14} color="#fee2e2" />
+                  <Text style={styles.dangerBtnText}>Eliminar</Text>
+                </View>
               </Pressable>
             </View>
           </View>
@@ -330,7 +357,10 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
       />
 
       <Pressable style={styles.fab} onPress={openCreate}>
-        <Text style={styles.fabText}>+ Nuevo</Text>
+        <View style={styles.btnContentRow}>
+          <Ionicons name="add-circle-outline" size={16} color="#062915" />
+          <Text style={styles.fabText}>Nuevo</Text>
+        </View>
       </Pressable>
 
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
@@ -348,20 +378,35 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>{form.third_party_id ? 'Editar tercero' : 'Nuevo tercero'}</Text>
 
               <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Tipo de tercero</Text>
-              <View style={styles.toggleRow}>
-                {['customer', 'supplier', 'both'].map((type) => (
-                  <Pressable
-                    key={type}
-                    style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, form.type === type && styles.toggleBtnActive]}
-                    onPress={() => setForm((prev) => ({ ...prev, type }))}
-                  >
-                    <Text style={[styles.toggleBtnText, isLightTheme && styles.toggleBtnTextLight, form.type === type && styles.toggleBtnTextActive]}>
-                      {type === 'customer' ? 'Cliente' : type === 'supplier' ? 'Proveedor' : 'Ambos'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Text style={[styles.typeHint, isLightTheme && styles.typeHintLight]}>{typeHelpText(form.type)}</Text>
+              {hideTypeFilter ? (
+                <View style={styles.badgesRow}>
+                  <View style={[styles.badge, { borderColor: '#235ea9', opacity: 1 }]}>
+                    <Text style={styles.badgeText}>{lockedType === 'customer' ? 'Cliente' : 'Proveedor'}</Text>
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <View style={styles.toggleRow}>
+                    {['customer', 'supplier', 'both'].map((type) => (
+                      <Pressable
+                        key={type}
+                        style={[
+                          styles.toggleBtn,
+                          isLightTheme && styles.toggleBtnLight,
+                          form.type === type && styles.toggleBtnActive,
+                          form.type === type && isLightTheme && styles.toggleBtnActiveLight,
+                        ]}
+                        onPress={() => setForm((prev) => ({ ...prev, type }))}
+                      >
+                        <Text style={[styles.toggleBtnText, isLightTheme && styles.toggleBtnTextLight, form.type === type && styles.toggleBtnTextActive]}>
+                          {type === 'customer' ? 'Cliente' : type === 'supplier' ? 'Proveedor' : 'Ambos'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={[styles.typeHint, isLightTheme && styles.typeHintLight]}>{typeHelpText(form.type)}</Text>
+                </>
+              )}
 
               <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Identificacion</Text>
               <TextInput
@@ -522,7 +567,12 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 
               <View style={styles.switchRowWrap}>
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_responsible_for_iva && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.is_responsible_for_iva && styles.switchCardActive,
+                    form.is_responsible_for_iva && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_responsible_for_iva: !prev.is_responsible_for_iva }))
                   }
@@ -532,7 +582,12 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.obligated_accounting && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.obligated_accounting && styles.switchCardActive,
+                    form.obligated_accounting && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, obligated_accounting: !prev.obligated_accounting }))
                   }
@@ -546,6 +601,7 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                     styles.switchCard,
                     isLightTheme && styles.switchCardLight,
                     form.electronic_invoicing_enabled && styles.switchCardActive,
+                    form.electronic_invoicing_enabled && isLightTheme && styles.switchCardActiveLight,
                   ]}
                   onPress={() =>
                     setForm((prev) => ({
@@ -561,7 +617,12 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_active && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.is_active && styles.switchCardActive,
+                    form.is_active && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
                 >
                   <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Activo</Text>
@@ -570,12 +631,18 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
               </View>
 
                 <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
-                  <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                  <View style={styles.btnContentRow}>
+                    <Ionicons name={saving ? 'hourglass-outline' : 'save-outline'} size={15} color="#062915" />
+                    <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                  </View>
                 </Pressable>
               </ScrollView>
 
               <Pressable onPress={() => setModalOpen(false)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnContentRow}>
+                  <Ionicons name="chevron-down-circle-outline" size={15} color="#fff" />
+                  <Text style={styles.closeBtnText}>Cerrar</Text>
+                </View>
               </Pressable>
             </View>
           </KeyboardAvoidingView>
@@ -586,8 +653,8 @@ export default function ThirdPartiesScreen({ tenant, offlineMode, pageSize = 20 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -605,13 +672,14 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   searchBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchBtnText: { color: '#dbeafe', fontWeight: '700' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 40, marginBottom: 8 },
   filterChip: {
     borderRadius: 999,
@@ -622,10 +690,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActive: { backgroundColor: '#f59e0b', borderColor: '#f59e0b' },
+  filterChipActive: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#451a03' },
+  filterChipTextActive: { color: '#eff6ff' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -639,6 +707,7 @@ const styles = StyleSheet.create({
   nameLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
   metaLight: { color: '#475569' },
+  btnContentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -651,7 +720,7 @@ const styles = StyleSheet.create({
   inlineActions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -666,15 +735,12 @@ const styles = StyleSheet.create({
   },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
+  fabText: { color: '#062915', fontWeight: '800' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalAvoider: { width: '100%' },
   modalBody: {
@@ -697,7 +763,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
-  groupTitleLight: { color: '#1d4ed8' },
+  groupTitleLight: { color: '#235ea9' },
   rowTwo: { flexDirection: 'row', gap: 8 },
   flexInput: { flex: 1 },
   shortInput: { width: 90 },
@@ -725,10 +791,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   toggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  toggleBtnActive: { borderColor: '#2563eb', backgroundColor: '#172554' },
+  toggleBtnActive: { borderColor: '#235ea9', backgroundColor: '#172554' },
+  toggleBtnActiveLight: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
   toggleBtnTextLight: { color: '#334155' },
-  toggleBtnTextActive: { color: '#bfdbfe' },
+  toggleBtnTextActive: { color: '#eff6ff' },
   methodChipsRow: { flexDirection: 'row', gap: 6 },
   methodChip: {
     borderWidth: 1,
@@ -739,10 +806,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   methodChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  methodChipActive: { backgroundColor: '#0ea5e9', borderColor: '#0ea5e9' },
+  methodChipActive: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
   methodChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   methodChipTextLight: { color: '#334155' },
-  methodChipTextActive: { color: '#082f49' },
+  methodChipTextActive: { color: '#eff6ff' },
   taxRegimeList: { marginTop: 8, gap: 8 },
   taxRegimeItem: {
     borderWidth: 1,
@@ -753,10 +820,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
   },
   taxRegimeItemLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  taxRegimeItemActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  taxRegimeItemActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   taxRegimeText: { color: '#cbd5e1', fontSize: 13, fontWeight: '600' },
   taxRegimeTextLight: { color: '#334155' },
-  taxRegimeTextActive: { color: '#bae6fd' },
+  taxRegimeTextActive: { color: '#eff6ff' },
   switchRowWrap: { gap: 8, marginTop: 8 },
   switchCard: {
     borderWidth: 1,
@@ -766,23 +833,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   switchCardLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
+  switchCardActive: { borderColor: '#235ea9', backgroundColor: '#0f1f35' },
+  switchCardActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
   switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
   switchTitleLight: { color: '#0f172a' },
   switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
-  switchDescLight: { color: '#1d4ed8' },
+  switchDescLight: { color: '#235ea9' },
   primaryBtn: {
-    marginTop: 14,
-    backgroundColor: '#d97706',
+    backgroundColor: '#57d65a',
     borderRadius: 8,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

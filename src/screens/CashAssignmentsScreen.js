@@ -49,6 +49,15 @@ export default function CashAssignmentsScreen({ tenant, userProfile, offlineMode
       })),
     [registers],
   );
+  const locationSelectOptions = useMemo(
+    () =>
+      (locations || []).map((loc) => ({
+        key: loc.location_id,
+        label: loc.name || 'Sede',
+        searchText: loc.name || '',
+      })),
+    [locations],
+  );
 
   const {
     items,
@@ -159,138 +168,60 @@ export default function CashAssignmentsScreen({ tenant, userProfile, offlineMode
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          <Pressable
-            style={[
-              styles.filterChip,
-              isLightTheme && styles.filterChipLight,
-              !filters?.user_id && styles.filterChipActive,
-              !filters?.user_id && isLightTheme && styles.filterChipActiveLight,
-            ]}
-            onPress={() => updateFilters({ user_id: '' })}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                isLightTheme && styles.filterChipTextLight,
-                !filters?.user_id && styles.filterChipTextActive,
-                !filters?.user_id && isLightTheme && styles.filterChipTextActiveLight,
-              ]}
-            >
-              Todos cajeros
-            </Text>
-          </Pressable>
-          {users.map((u) => {
-            const active = filters?.user_id === u.user_id;
-            return (
-              <Pressable
-                key={u.user_id}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ user_id: u.user_id })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {u.full_name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Cajero"
+          themeMode={themeMode}
+          valueLabel="Todos los cajeros"
+          clearLabel="Todos los cajeros"
+          placeholder="Todos los cajeros"
+          searchPlaceholder="Buscar cajero..."
+          options={userSelectOptions}
+          selectedKey={filters?.user_id || ''}
+          onSelect={(nextValue) => updateFilters({ user_id: nextValue || '' })}
+        />
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          <Pressable
-            style={[
-              styles.filterChip,
-              isLightTheme && styles.filterChipLight,
-              !filters?.location_id && styles.filterChipActive,
-              !filters?.location_id && isLightTheme && styles.filterChipActiveLight,
-            ]}
-            onPress={() => updateFilters({ location_id: '' })}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                isLightTheme && styles.filterChipTextLight,
-                !filters?.location_id && styles.filterChipTextActive,
-                !filters?.location_id && isLightTheme && styles.filterChipTextActiveLight,
-              ]}
-            >
-              Todas sedes
-            </Text>
-          </Pressable>
-          {locations.map((loc) => {
-            const active = filters?.location_id === loc.location_id;
-            return (
-              <Pressable
-                key={loc.location_id}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ location_id: loc.location_id })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {loc.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Sede"
+          themeMode={themeMode}
+          valueLabel="Todas las sedes"
+          clearLabel="Todas las sedes"
+          placeholder="Todas las sedes"
+          searchPlaceholder="Buscar sede..."
+          options={locationSelectOptions}
+          selectedKey={filters?.location_id || ''}
+          onSelect={(nextValue) => updateFilters({ location_id: nextValue || '' })}
+        />
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          {ACTIVE_FILTERS.map((opt) => {
-            const active = filters?.is_active === opt.value;
-            return (
-              <Pressable
-                key={opt.label}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ is_active: opt.value })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Estado asignacion"
+          themeMode={themeMode}
+          valueLabel="Activas"
+          clearLabel="Todas"
+          placeholder="Estado"
+          searchPlaceholder="Buscar estado..."
+          options={ACTIVE_FILTERS.filter((opt) => opt.value !== null).map((opt) => ({
+            key: String(opt.value),
+            label: opt.label,
+          }))}
+          selectedKey={filters?.is_active === true ? 'true' : filters?.is_active === false ? 'false' : ''}
+          onSelect={(nextValue) => {
+            if (nextValue === 'true') {
+              updateFilters({ is_active: true });
+              return;
+            }
+            if (nextValue === 'false') {
+              updateFilters({ is_active: false });
+              return;
+            }
+            updateFilters({ is_active: null });
+          }}
+        />
+      </View>
 
       <PaginatedList
         themeMode={themeMode}
@@ -374,8 +305,9 @@ export default function CashAssignmentsScreen({ tenant, userProfile, offlineMode
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -386,13 +318,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -419,26 +351,23 @@ const styles = StyleSheet.create({
   badgeTextLight: { color: '#334155' },
   secondaryBtn: {
     marginTop: 10,
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
   },
   secondaryBtnText: { color: '#dbeafe', fontWeight: '700' },
-  secondaryBtnLight: { backgroundColor: '#1d4ed8' },
+  secondaryBtnLight: { backgroundColor: '#235ea9' },
   secondaryBtnTextLight: { color: '#eff6ff' },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
-  fabLight: { backgroundColor: '#facc15' },
-  fabTextLight: { color: '#422006' },
+  fabText: { color: '#062915', fontWeight: '800' },
+  fabLight: { backgroundColor: '#57d65a' },
+  fabTextLight: { color: '#062915' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '88%',
@@ -451,7 +380,7 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
   modalTitleLight: { color: '#0f172a' },
   groupTitle: { color: '#93c5fd', marginTop: 10, marginBottom: 4, fontWeight: '700', fontSize: 13, textTransform: 'uppercase' },
-  groupTitleLight: { color: '#0369a1' },
+  groupTitleLight: { color: '#235ea9' },
   option: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -461,21 +390,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 8,
   },
-  optionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  optionActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   optionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  optionActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  optionActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
   optionText: { color: '#cbd5e1', fontWeight: '600' },
   optionTextLight: { color: '#334155' },
-  optionTextActive: { color: '#bae6fd' },
-  optionTextActiveLight: { color: '#0369a1' },
-  primaryBtn: { marginTop: 14, backgroundColor: '#d97706', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
-  primaryBtnLight: { backgroundColor: '#1d4ed8' },
-  primaryBtnTextLight: { color: '#eff6ff' },
+  optionTextActive: { color: '#eff6ff' },
+  optionTextActiveLight: { color: '#235ea9' },
+  primaryBtn: { marginTop: 14, backgroundColor: '#57d65a', borderRadius: 8, paddingVertical: 11, alignItems: 'center' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
+  primaryBtnLight: { backgroundColor: '#57d65a' },
+  primaryBtnTextLight: { color: '#062915' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

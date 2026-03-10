@@ -257,8 +257,8 @@ export default function CategoriesScreen({ tenant, offlineMode, pageSize = 20 })
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   searchBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -314,15 +314,12 @@ const styles = StyleSheet.create({
   },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
+  fabText: { color: '#062915', fontWeight: '800' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '86%',
@@ -342,7 +339,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
-  groupTitleLight: { color: '#1d4ed8' },
+  groupTitleLight: { color: '#235ea9' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -364,22 +361,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   parentOptionLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  parentOptionActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  parentOptionActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   parentOptionText: { color: '#cbd5e1', fontWeight: '600' },
   parentOptionTextLight: { color: '#334155' },
-  parentOptionTextActive: { color: '#bae6fd' },
+  parentOptionTextActive: { color: '#eff6ff' },
   primaryBtn: {
-    marginTop: 14,
-    backgroundColor: '#d97706',
+    backgroundColor: '#57d65a',
     borderRadius: 8,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

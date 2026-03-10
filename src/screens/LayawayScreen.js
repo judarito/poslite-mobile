@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -23,6 +24,16 @@ import {
 import { getPaymentMethodsForDropdown } from '../services/pos.service';
 
 const STATUS_FILTERS = ['', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'EXPIRED'];
+const STATUS_FILTER_LABELS = {
+  ACTIVE: 'Activos',
+  COMPLETED: 'Completados',
+  CANCELLED: 'Cancelados',
+  EXPIRED: 'Vencidos',
+};
+const STATUS_FILTER_OPTIONS = STATUS_FILTERS.filter(Boolean).map((value) => ({
+  key: value,
+  label: STATUS_FILTER_LABELS[value] || value,
+}));
 
 export default function LayawayScreen({
   tenant,
@@ -169,21 +180,19 @@ export default function LayawayScreen({
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        {STATUS_FILTERS.map((s) => {
-          const active = (filters?.status || '') === s;
-          const label = s || 'TODOS';
-          return (
-            <Pressable
-              key={label}
-              style={[styles.filterChip, isLightTheme && styles.filterChipLight, active && styles.filterChipActive]}
-              onPress={() => updateFilters({ status: s })}
-            >
-              <Text style={[styles.filterChipText, isLightTheme && styles.filterChipTextLight, active && styles.filterChipTextActive]}>{label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Estado"
+          themeMode={themeMode}
+          valueLabel="Todos"
+          clearLabel="Todos"
+          placeholder="Todos"
+          searchPlaceholder="Buscar estado..."
+          options={STATUS_FILTER_OPTIONS}
+          selectedKey={filters?.status || ''}
+          onSelect={(nextValue) => updateFilters({ status: nextValue || '' })}
+        />
+      </View>
 
       <PaginatedList
         themeMode={themeMode}
@@ -316,9 +325,10 @@ export default function LayawayScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700', marginBottom: 10 },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 40, marginBottom: 8 },
   filterChip: {
     borderRadius: 999,
@@ -329,10 +339,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActive: { backgroundColor: '#22c55e', borderColor: '#22c55e' },
+  filterChipActive: { backgroundColor: '#235ea9', borderColor: '#235ea9' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#052e16' },
+  filterChipTextActive: { color: '#eff6ff' },
   list: { flex: 1 },
   card: { backgroundColor: '#111827', borderWidth: 1, borderColor: '#1f2937', borderRadius: 12, padding: 12, marginBottom: 8 },
   cardLight: { backgroundColor: '#ffffff', borderColor: '#dbe4ef' },
@@ -382,18 +392,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   methodBtnActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: '#235ea9',
+    borderColor: '#235ea9',
   },
   methodBtnText: { color: '#f8fafc', fontSize: 12 },
   methodBtnTextLight: { color: '#334155' },
-  primaryBtn: { marginTop: 10, backgroundColor: '#16a34a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  primaryBtnText: { color: '#ecfdf5', fontWeight: '700' },
+  primaryBtn: { marginTop: 10, backgroundColor: '#57d65a', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   inlineActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  secondaryBtn: { flex: 1, backgroundColor: '#1e40af', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  secondaryBtn: { flex: 1, backgroundColor: '#235ea9', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   secondaryBtnText: { color: '#dbeafe', fontWeight: '700' },
   dangerBtn: { flex: 1, backgroundColor: '#7f1d1d', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
-  closeBtn: { marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#1d4ed8', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
+  closeBtn: { marginTop: 12, alignSelf: 'flex-end', backgroundColor: '#235ea9', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   closeBtnText: { color: '#fff', fontWeight: '700' },
 });

@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import { listBoms } from '../services/inventoryCatalog.service';
 
 const TYPE_FILTERS = ['', 'product', 'variant'];
+const TYPE_FILTER_OPTIONS = TYPE_FILTERS.filter(Boolean).map((type) => ({
+  key: type,
+  label: type === 'product' ? 'Producto' : type === 'variant' ? 'Variante' : type,
+}));
 
 export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
   const themeMode = useThemeMode();
@@ -56,37 +61,19 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
         </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          {TYPE_FILTERS.map((type) => {
-            const active = (filters?.type || '') === type;
-            const label = type || 'Todos';
-            return (
-              <Pressable
-                key={label}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ type })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Tipo de BOM"
+          themeMode={themeMode}
+          valueLabel="Todos"
+          clearLabel="Todos"
+          placeholder="Todos"
+          searchPlaceholder="Buscar tipo..."
+          options={TYPE_FILTER_OPTIONS}
+          selectedKey={filters?.type || ''}
+          onSelect={(nextValue) => updateFilters({ type: nextValue || '' })}
+        />
+      </View>
 
       <PaginatedList
         themeMode={themeMode}
@@ -115,7 +102,7 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
                   : 'Sin destino'}
             </Text>
             <View style={styles.badgesRow}>
-              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
+              <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#235ea9' }]}>
                 <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{(item.bom_components || []).length} componente(s)</Text>
               </View>
               <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
@@ -134,8 +121,8 @@ export default function BOMsScreen({ tenant, offlineMode, pageSize = 20 }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -153,15 +140,16 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   searchBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  searchBtnLight: { backgroundColor: '#1d4ed8' },
+  searchBtnLight: { backgroundColor: '#235ea9' },
   searchBtnText: { color: '#dbeafe', fontWeight: '700' },
   searchBtnTextLight: { color: '#eff6ff' },
+  filtersBlock: { marginBottom: 8 },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -172,13 +160,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,

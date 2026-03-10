@@ -8,10 +8,14 @@ Este directorio contiene la documentación del sistema POS Lite.
   - `/docs/MOBILE_CONTEXT.md`
 - Checklist de estado y prioridades:
   - `/docs/MOBILE_IMPLEMENTATION_CHECKLIST.md`
+- Estado de migracion web -> mobile (actualizado):
+  - `/docs/MOBILE_WEB_MODULE_MIGRATION_2026_03_10.md`
 - Analisis de competitividad del POS mobile:
   - `/docs/POS_COMPETITIVE_GAP_ANALYSIS_2026.md`
 - Setup de LLM local (Qwen2.5-1.5B + Ollama):
   - `/docs/QWEN_LOCAL_LLM_SETUP.md`
+- Centro IA mobile (8 analisis operativos):
+  - `/docs/AI_INSIGHTS_CENTER.md`
 
 ## 📘 Manual de Usuario
 

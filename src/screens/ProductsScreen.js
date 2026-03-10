@@ -14,9 +14,9 @@ import {
   updateProduct,
 } from '../services/productsCatalog.service';
 
-const PRODUCT_TABS = [
-  { value: false, label: 'Productos para venta' },
-  { value: true, label: 'Insumos/componentes' },
+const PRODUCT_TAB_OPTIONS = [
+  { key: 'products', label: 'Productos para venta', value: false },
+  { key: 'components', label: 'Insumos/componentes', value: true },
 ];
 
 const EMPTY_FORM = {
@@ -200,19 +200,20 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <View style={styles.tabRow}>
-        {PRODUCT_TABS.map((tab) => {
-          const active = Boolean(filters?.isComponent) === tab.value;
-          return (
-            <Pressable
-              key={tab.label}
-              style={[styles.tabBtn, isLightTheme && styles.tabBtnLight, active && styles.tabBtnActive]}
-              onPress={() => updateFilters({ isComponent: tab.value })}
-            >
-              <Text style={[styles.tabText, isLightTheme && styles.tabTextLight, active && styles.tabTextActive]}>{tab.label}</Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Tipo de catalogo"
+          themeMode={themeMode}
+          valueLabel={Boolean(filters?.isComponent) ? 'Insumos/componentes' : 'Productos para venta'}
+          placeholder="Seleccionar tipo"
+          searchPlaceholder="Buscar tipo..."
+          options={PRODUCT_TAB_OPTIONS.map((entry) => ({ key: entry.key, label: entry.label, searchText: entry.label }))}
+          selectedKey={Boolean(filters?.isComponent) ? 'components' : 'products'}
+          onSelect={(nextValue) =>
+            updateFilters({ isComponent: PRODUCT_TAB_OPTIONS.find((entry) => entry.key === nextValue)?.value === true })
+          }
+          allowClear={false}
+        />
       </View>
 
       <View style={styles.toolbar}>
@@ -280,7 +281,7 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                   <Ionicons
                     name={expandedVariants[item.product_id] ? 'eye-off-outline' : 'eye-outline'}
                     size={14}
-                    color={isLightTheme ? '#0369a1' : '#bae6fd'}
+                    color={isLightTheme ? '#235ea9' : '#eff6ff'}
                   />
                   <Text style={[styles.variantToggleText, isLightTheme && styles.variantToggleTextLight]}>
                     {expandedVariants[item.product_id] ? 'Ocultar variantes' : 'Ver variantes'}
@@ -356,7 +357,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
               <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Tipo</Text>
               <View style={styles.toggleRow}>
                 <Pressable
-                  style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, !form.is_component && styles.toggleBtnActive]}
+                  style={[
+                    styles.toggleBtn,
+                    isLightTheme && styles.toggleBtnLight,
+                    !form.is_component && styles.toggleBtnActive,
+                    !form.is_component && isLightTheme && styles.toggleBtnActiveLight,
+                  ]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_component: false, inventory_behavior: 'RESELL' }))
                   }
@@ -366,7 +372,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                   </Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.toggleBtn, isLightTheme && styles.toggleBtnLight, form.is_component && styles.toggleBtnActive]}
+                  style={[
+                    styles.toggleBtn,
+                    isLightTheme && styles.toggleBtnLight,
+                    form.is_component && styles.toggleBtnActive,
+                    form.is_component && isLightTheme && styles.toggleBtnActiveLight,
+                  ]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, is_component: true, inventory_behavior: 'MANUFACTURED' }))
                   }
@@ -404,7 +415,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
               <Text style={[styles.groupTitle, isLightTheme && styles.groupTitleLight]}>Configuracion</Text>
               <View style={styles.switchRowWrap}>
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.is_active && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.is_active && styles.switchCardActive,
+                    form.is_active && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
                 >
                   <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Producto activo</Text>
@@ -412,7 +428,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.track_inventory && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.track_inventory && styles.switchCardActive,
+                    form.track_inventory && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() => setForm((prev) => ({ ...prev, track_inventory: !prev.track_inventory }))}
                 >
                   <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Controla inventario</Text>
@@ -420,7 +441,12 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
                 </Pressable>
 
                 <Pressable
-                  style={[styles.switchCard, isLightTheme && styles.switchCardLight, form.requires_expiration && styles.switchCardActive]}
+                  style={[
+                    styles.switchCard,
+                    isLightTheme && styles.switchCardLight,
+                    form.requires_expiration && styles.switchCardActive,
+                    form.requires_expiration && isLightTheme && styles.switchCardActiveLight,
+                  ]}
                   onPress={() =>
                     setForm((prev) => ({ ...prev, requires_expiration: !prev.requires_expiration }))
                   }
@@ -452,8 +478,9 @@ export default function ProductsScreen({ tenant, offlineMode, pageSize = 20 }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   tabBtn: {
     flex: 1,
@@ -465,10 +492,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  tabBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  tabBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
   tabTextLight: { color: '#334155' },
-  tabTextActive: { color: '#bae6fd' },
+  tabTextActive: { color: '#eff6ff' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -486,7 +513,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   searchBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -518,7 +545,7 @@ const styles = StyleSheet.create({
   badgeGreen: { borderColor: '#16a34a' },
   badgeRed: { borderColor: '#ef4444' },
   badgeBlue: { borderColor: '#3b82f6' },
-  badgeSky: { borderColor: '#0ea5e9' },
+  badgeSky: { borderColor: '#235ea9' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
   variantToggleBtn: {
     marginTop: 8,
@@ -531,8 +558,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   variantToggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' },
-  variantToggleText: { color: '#bae6fd', fontSize: 12, fontWeight: '700' },
-  variantToggleTextLight: { color: '#0369a1' },
+  variantToggleText: { color: '#eff6ff', fontSize: 12, fontWeight: '700' },
+  variantToggleTextLight: { color: '#235ea9' },
   variantsBox: {
     marginTop: 8,
     borderWidth: 1,
@@ -558,7 +585,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -573,15 +600,12 @@ const styles = StyleSheet.create({
   },
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
+  fabText: { color: '#062915', fontWeight: '800' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '90%',
@@ -601,7 +625,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textTransform: 'uppercase',
   },
-  groupTitleLight: { color: '#1d4ed8' },
+  groupTitleLight: { color: '#235ea9' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -624,10 +648,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   toggleBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  toggleBtnActive: { borderColor: '#2563eb', backgroundColor: '#172554' },
+  toggleBtnActive: { borderColor: '#235ea9', backgroundColor: '#172554' },
+  toggleBtnActiveLight: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   toggleBtnText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
   toggleBtnTextLight: { color: '#334155' },
-  toggleBtnTextActive: { color: '#bfdbfe' },
+  toggleBtnTextActive: { color: '#eff6ff' },
   switchRowWrap: { gap: 8, marginTop: 8 },
   switchCard: {
     borderWidth: 1,
@@ -637,23 +662,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
   },
   switchCardLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
+  switchCardActive: { borderColor: '#235ea9', backgroundColor: '#0f1f35' },
+  switchCardActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
   switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
   switchTitleLight: { color: '#0f172a' },
   switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
-  switchDescLight: { color: '#1d4ed8' },
+  switchDescLight: { color: '#235ea9' },
   primaryBtn: {
-    marginTop: 14,
-    backgroundColor: '#d97706',
+    backgroundColor: '#57d65a',
     borderRadius: 8,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

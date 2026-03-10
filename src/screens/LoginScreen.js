@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 999,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     opacity: 0.24,
   },
   loginGlowTopLight: {
@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
   loginCardLight: {
     borderColor: '#dbeafe',
     backgroundColor: '#ffffff',
-    shadowColor: '#1d4ed8',
+    shadowColor: '#235ea9',
     shadowOpacity: 0.13,
   },
   loginBrandRow: {
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   loginPrimaryButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingVertical: 13,
     borderRadius: 12,
     marginTop: 6,

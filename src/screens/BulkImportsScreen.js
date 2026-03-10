@@ -379,7 +379,7 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
           <Ionicons
             name={showAiTools ? 'sparkles' : 'sparkles-outline'}
             size={14}
-            color={isLightTheme ? '#0369a1' : '#bae6fd'}
+            color={isLightTheme ? '#235ea9' : '#eff6ff'}
           />
           <Text style={[styles.aiToggleText, isLightTheme && styles.aiToggleTextLight]}>
             {showAiTools ? 'IA Ocultar' : 'IA'}
@@ -418,7 +418,7 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
               disabled={processingPhoto}
               onPress={() => pickAndParseImage('camera')}
             >
-              <Ionicons name="camera-outline" size={16} color="#e0f2fe" />
+              <Ionicons name="camera-outline" size={16} color="#eff6ff" />
               <Text style={styles.photoActionText}>{processingPhoto ? 'Procesando...' : 'Tomar foto'}</Text>
             </Pressable>
             <Pressable
@@ -553,7 +553,7 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
 
             <View style={styles.previewHeaderActions}>
               <Pressable style={styles.tinyBtn} onPress={addDraftRow}>
-                <Ionicons name="add-outline" size={14} color="#e0f2fe" />
+                <Ionicons name="add-outline" size={14} color="#eff6ff" />
                 <Text style={styles.tinyBtnText}>Agregar fila</Text>
               </Pressable>
               <Pressable
@@ -643,8 +643,8 @@ export default function BulkImportsScreen({ tenant, offlineMode }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   title: { color: '#f8fafc', fontSize: 20, fontWeight: '700' },
   titleLight: { color: '#0f172a' },
   meta: { color: '#94a3b8', marginTop: 6, marginBottom: 10 },
@@ -704,13 +704,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   exampleTitle: {
-    color: '#bae6fd',
+    color: '#eff6ff',
     fontWeight: '700',
     fontSize: 12,
     marginBottom: 2,
   },
   exampleTitleLight: {
-    color: '#1d4ed8',
+    color: '#235ea9',
   },
   exampleLine: {
     color: '#e2e8f0',
@@ -790,12 +790,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   typeBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  typeBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  typeBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   typeBtnText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
   typeBtnTextLight: { color: '#334155' },
-  typeBtnTextActive: { color: '#bae6fd' },
+  typeBtnTextActive: { color: '#eff6ff' },
   refreshBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     alignItems: 'center',
     paddingVertical: 10,
@@ -859,7 +859,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

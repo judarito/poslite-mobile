@@ -150,7 +150,7 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
       <View style={styles.toolbar}>
         <TextInput
-          style={styles.searchInput}
+          style={[styles.searchInput, isLightTheme && styles.searchInputLight]}
           value={search}
           onChangeText={setSearch}
           placeholder="Buscar por codigo, nombre o DIAN"
@@ -179,10 +179,10 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
             : null
         }
         renderItem={(item) => (
-          <View key={item.unit_id} style={styles.card}>
-            <Text style={styles.title}>{item.name}</Text>
-            <Text style={styles.meta}>Codigo: {item.code || '-'}</Text>
-            <Text style={styles.meta}>DIAN: {item.dian_code || 'No definido'}</Text>
+          <View key={item.unit_id} style={[styles.card, isLightTheme && styles.cardLight]}>
+            <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.name}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>Codigo: {item.code || '-'}</Text>
+            <Text style={[styles.meta, isLightTheme && styles.metaLight]}>DIAN: {item.dian_code || 'No definido'}</Text>
             <View style={styles.badgesRow}>
               <View style={[styles.badge, item.is_system ? styles.badgeBlue : styles.badgeGreen]}>
                 <Text style={styles.badgeText}>{item.is_system ? 'Sistema' : 'Personalizada'}</Text>
@@ -217,33 +217,35 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
 
       <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={() => setModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, isLightTheme && styles.modalBodyLight]}>
             <ScrollView>
-              <Text style={styles.modalTitle}>{form.unit_id ? 'Editar unidad' : 'Nueva unidad'}</Text>
+              <Text style={[styles.modalTitle, isLightTheme && styles.modalTitleLight]}>
+                {form.unit_id ? 'Editar unidad' : 'Nueva unidad'}
+              </Text>
 
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.code}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, code: v.toUpperCase() }))}
                 placeholder="Codigo *"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.dian_code}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, dian_code: v.toUpperCase() }))}
                 placeholder="Codigo DIAN"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isLightTheme && styles.inputLight]}
                 value={form.name}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, name: v }))}
                 placeholder="Nombre *"
                 placeholderTextColor="#64748b"
               />
               <TextInput
-                style={[styles.input, { minHeight: 70 }]}
+                style={[styles.input, isLightTheme && styles.inputLight, { minHeight: 70 }]}
                 value={form.description}
                 onChangeText={(v) => setForm((prev) => ({ ...prev, description: v }))}
                 placeholder="Descripcion"
@@ -252,11 +254,18 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
               />
 
               <Pressable
-                style={[styles.switchCard, form.is_active && styles.switchCardActive]}
+                style={[
+                  styles.switchCard,
+                  isLightTheme && styles.switchCardLight,
+                  form.is_active && styles.switchCardActive,
+                  form.is_active && isLightTheme && styles.switchCardActiveLight,
+                ]}
                 onPress={() => setForm((prev) => ({ ...prev, is_active: !prev.is_active }))}
               >
-                <Text style={styles.switchTitle}>Unidad activa</Text>
-                <Text style={styles.switchDesc}>{boolText(form.is_active, 'Si', 'No')}</Text>
+                <Text style={[styles.switchTitle, isLightTheme && styles.switchTitleLight]}>Unidad activa</Text>
+                <Text style={[styles.switchDesc, isLightTheme && styles.switchDescLight]}>
+                  {boolText(form.is_active, 'Si', 'No')}
+                </Text>
               </Pressable>
 
               <Pressable style={styles.primaryBtn} onPress={save} disabled={saving}>
@@ -275,7 +284,8 @@ export default function UnitsScreen({ tenant, offlineMode, pageSize = 20 }) {
 }
 
 const styles = StyleSheet.create({
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   toolbar: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchInput: {
     flex: 1,
@@ -287,8 +297,9 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     paddingHorizontal: 10,
   },
+  searchInputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   searchBtn: {
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
@@ -303,8 +314,11 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  cardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
   title: { color: '#f8fafc', fontWeight: '700', fontSize: 15 },
+  titleLight: { color: '#0f172a' },
   meta: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
+  metaLight: { color: '#475569' },
   badgesRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   badge: {
     borderWidth: 1,
@@ -320,7 +334,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   secondaryBtn: {
     flex: 1,
-    backgroundColor: '#1e40af',
+    backgroundColor: '#235ea9',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
@@ -336,15 +350,12 @@ const styles = StyleSheet.create({
   dangerBtnText: { color: '#fee2e2', fontWeight: '700' },
   disabledBtn: { opacity: 0.4 },
   fab: {
-    position: 'absolute',
-    right: 16,
-    bottom: 72,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#57d65a',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  fabText: { color: '#451a03', fontWeight: '800' },
+  fabText: { color: '#062915', fontWeight: '800' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalBody: {
     maxHeight: '86%',
@@ -353,7 +364,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 14,
     padding: 14,
   },
+  modalBodyLight: { backgroundColor: '#ffffff', borderTopWidth: 1, borderColor: '#dbe4ef' },
   modalTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700', marginBottom: 8 },
+  modalTitleLight: { color: '#0f172a' },
   input: {
     minHeight: 42,
     borderRadius: 8,
@@ -364,6 +377,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: '#111827',
   },
+  inputLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' },
   switchCard: {
     borderWidth: 1,
     borderColor: '#334155',
@@ -372,21 +386,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     marginTop: 10,
   },
-  switchCardActive: { borderColor: '#0ea5e9', backgroundColor: '#0f1f35' },
+  switchCardLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
+  switchCardActive: { borderColor: '#235ea9', backgroundColor: '#0f1f35' },
+  switchCardActiveLight: { borderColor: '#235ea9', backgroundColor: '#eff6ff' },
   switchTitle: { color: '#e2e8f0', fontSize: 13, fontWeight: '700' },
+  switchTitleLight: { color: '#0f172a' },
   switchDesc: { color: '#93c5fd', fontSize: 12, marginTop: 4 },
+  switchDescLight: { color: '#235ea9' },
   primaryBtn: {
-    marginTop: 14,
-    backgroundColor: '#d97706',
+    backgroundColor: '#57d65a',
     borderRadius: 8,
     paddingVertical: 11,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fffbeb', fontWeight: '700' },
+  primaryBtnText: { color: '#062915', fontWeight: '700' },
   closeBtn: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#1d4ed8',
+    backgroundColor: '#235ea9',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,

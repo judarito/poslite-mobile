@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import PaginatedList from '../components/PaginatedList';
+import SearchableSelectField from '../components/SearchableSelectField';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import { useThemeMode } from '../lib/themeMode';
 import {
@@ -10,9 +11,9 @@ import {
 } from '../services/inventoryCatalog.service';
 
 const TABS = [
-  { key: 'stock', label: 'Stock' },
+  { key: 'stock', label: 'Stock Actual' },
   { key: 'components', label: 'Insumos' },
-  { key: 'kardex', label: 'Kardex' },
+  { key: 'kardex', label: 'Kardex / Movimientos' },
 ];
 
 const MOVE_TYPES = [
@@ -29,6 +30,20 @@ const MOVE_TYPES = [
 
 function moveLabel(type) {
   return type || 'Todos';
+}
+
+function moveTypeLabel(type) {
+  const map = {
+    PURCHASE_IN: 'Compra',
+    SALE_OUT: 'Venta',
+    RETURN_IN: 'Devolucion',
+    ADJUSTMENT: 'Ajuste',
+    TRANSFER_OUT: 'Traslado salida',
+    TRANSFER_IN: 'Traslado entrada',
+    PRODUCTION_IN: 'Produccion entrada',
+    PRODUCTION_OUT: 'Produccion salida',
+  };
+  return map[type] || type || '-';
 }
 
 function getAlert(item) {
@@ -104,120 +119,72 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
         `$ ${Math.round(Number(value || 0)).toLocaleString('es-CO')}`),
     [formatMoney],
   );
+  const tabFilterOptions = useMemo(
+    () => TABS.map((tab) => ({ key: tab.key, label: tab.label, searchText: tab.label })),
+    [],
+  );
+  const locationFilterOptions = useMemo(
+    () =>
+      (locations || []).map((loc) => ({
+        key: loc.location_id,
+        label: loc.name,
+        searchText: loc.name,
+      })),
+    [locations],
+  );
+  const moveTypeFilterOptions = useMemo(
+    () =>
+      MOVE_TYPES.filter(Boolean).map((type) => ({
+        key: type,
+        label: moveLabel(type),
+      })),
+    [],
+  );
 
   return (
     <View style={[styles.container, isLightTheme && styles.containerLight]}>
-      <View style={styles.tabRow}>
-        {TABS.map((tab) => {
-          const active = filters?.tab === tab.key;
-          return (
-            <Pressable
-              key={tab.key}
-              style={[
-                styles.tabBtn,
-                isLightTheme && styles.tabBtnLight,
-                active && styles.tabBtnActive,
-                active && isLightTheme && styles.tabBtnActiveLight,
-              ]}
-              onPress={() => updateFilters({ tab: tab.key, move_type: '' })}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  isLightTheme && styles.tabTextLight,
-                  active && styles.tabTextActive,
-                  active && isLightTheme && styles.tabTextActiveLight,
-                ]}
-              >
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Vista"
+          themeMode={themeMode}
+          valueLabel={TABS.find((tab) => tab.key === filters?.tab)?.label || 'Stock Actual'}
+          placeholder="Seleccionar vista"
+          searchPlaceholder="Buscar vista..."
+          options={tabFilterOptions}
+          selectedKey={filters?.tab || 'stock'}
+          onSelect={(nextValue) => updateFilters({ tab: nextValue || 'stock', move_type: '' })}
+          allowClear={false}
+        />
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-        <View style={styles.chipsRow}>
-          <Pressable
-            style={[
-              styles.filterChip,
-              isLightTheme && styles.filterChipLight,
-              !filters?.location_id && styles.filterChipActive,
-              !filters?.location_id && isLightTheme && styles.filterChipActiveLight,
-            ]}
-            onPress={() => updateFilters({ location_id: '' })}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                isLightTheme && styles.filterChipTextLight,
-                !filters?.location_id && styles.filterChipTextActive,
-                !filters?.location_id && isLightTheme && styles.filterChipTextActiveLight,
-              ]}
-            >
-              Todas las sedes
-            </Text>
-          </Pressable>
-          {locations.map((loc) => {
-            const active = filters?.location_id === loc.location_id;
-            return (
-              <Pressable
-                key={loc.location_id}
-                style={[
-                  styles.filterChip,
-                  isLightTheme && styles.filterChipLight,
-                  active && styles.filterChipActive,
-                  active && isLightTheme && styles.filterChipActiveLight,
-                ]}
-                onPress={() => updateFilters({ location_id: loc.location_id })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isLightTheme && styles.filterChipTextLight,
-                    active && styles.filterChipTextActive,
-                    active && isLightTheme && styles.filterChipTextActiveLight,
-                  ]}
-                >
-                  {loc.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.filtersBlock}>
+        <SearchableSelectField
+          title="Sede"
+          themeMode={themeMode}
+          valueLabel="Todas las sedes"
+          clearLabel="Todas las sedes"
+          placeholder="Todas las sedes"
+          searchPlaceholder="Buscar sede..."
+          options={locationFilterOptions}
+          selectedKey={filters?.location_id || ''}
+          onSelect={(nextValue) => updateFilters({ location_id: nextValue || '' })}
+        />
+      </View>
 
       {filters?.tab === 'kardex' ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-          <View style={styles.chipsRow}>
-            {MOVE_TYPES.map((type) => {
-              const active = (filters?.move_type || '') === type;
-              return (
-                <Pressable
-                  key={type || 'all'}
-                  style={[
-                    styles.filterChip,
-                    isLightTheme && styles.filterChipLight,
-                    active && styles.filterChipActive,
-                    active && isLightTheme && styles.filterChipActiveLight,
-                  ]}
-                  onPress={() => updateFilters({ move_type: type })}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      isLightTheme && styles.filterChipTextLight,
-                      active && styles.filterChipTextActive,
-                      active && isLightTheme && styles.filterChipTextActiveLight,
-                    ]}
-                  >
-                    {moveLabel(type)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </ScrollView>
+        <View style={styles.filtersBlock}>
+          <SearchableSelectField
+            title="Tipo de movimiento"
+            themeMode={themeMode}
+            valueLabel="Todos"
+            clearLabel="Todos"
+            placeholder="Todos"
+            searchPlaceholder="Buscar movimiento..."
+            options={moveTypeFilterOptions}
+            selectedKey={filters?.move_type || ''}
+            onSelect={(nextValue) => updateFilters({ move_type: nextValue || '' })}
+          />
+        </View>
       ) : null}
 
       <PaginatedList
@@ -247,18 +214,42 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
             <View key={item.inventory_move_id} style={[styles.card, isLightTheme && styles.cardLight]}>
               <Text style={[styles.title, isLightTheme && styles.titleLight]}>{item.variant?.product?.name || 'Producto'}</Text>
               <Text style={[styles.meta, isLightTheme && styles.metaLight]}>{item.variant?.sku || '-'} · {item.variant?.variant_name || '-'}</Text>
-              <Text style={[styles.meta, isLightTheme && styles.metaLight]}>
-                {item.location?.name || 'Sin sede'} · {new Date(item.created_at).toLocaleString()}
-              </Text>
-              <View style={styles.badgesRow}>
-                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#0ea5e9' }]}>
-                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>{item.move_type}</Text>
+              <View style={[styles.kardexRows, isLightTheme && styles.kardexRowsLight]}>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Fecha</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{new Date(item.created_at).toLocaleString()}</Text>
                 </View>
-                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#a78bfa' }]}>
-                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Cant. {Number(item.quantity || 0).toLocaleString('es-CO')}</Text>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Sede</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{item.location?.name || 'Sin sede'}</Text>
                 </View>
-                <View style={[styles.badge, isLightTheme && styles.badgeLight, { borderColor: '#f59e0b' }]}>
-                  <Text style={[styles.badgeText, isLightTheme && styles.badgeTextLight]}>Costo {money(item.unit_cost || 0)}</Text>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Tipo</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{moveTypeLabel(item.move_type)}</Text>
+                </View>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Cantidad</Text>
+                  <Text
+                    style={[
+                      styles.kardexValue,
+                      isLightTheme && styles.kardexValueLight,
+                      Number(item.quantity || 0) >= 0 ? styles.qtyPositive : styles.qtyNegative,
+                    ]}
+                  >
+                    {Number(item.quantity || 0) >= 0 ? '+' : ''}{Number(item.quantity || 0).toLocaleString('es-CO')}
+                  </Text>
+                </View>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Costo unitario</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{money(item.unit_cost || 0)}</Text>
+                </View>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Origen</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{item.source || '-'}</Text>
+                </View>
+                <View style={styles.kardexRow}>
+                  <Text style={[styles.kardexLabel, isLightTheme && styles.kardexLabelLight]}>Usuario</Text>
+                  <Text style={[styles.kardexValue, isLightTheme && styles.kardexValueLight]}>{item.created_by_user?.full_name || '-'}</Text>
                 </View>
               </View>
               {item.note ? <Text style={[styles.note, isLightTheme && styles.noteLight]}>{item.note}</Text> : null}
@@ -291,25 +282,30 @@ export default function InventoryScreen({ tenant, offlineMode, pageSize = 20, fo
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
-  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
+  filtersBlock: { marginBottom: 8 },
+  tabScroll: { marginBottom: 8 },
+  tabRow: { flexDirection: 'row', gap: 8, alignItems: 'stretch', paddingBottom: 2 },
   tabBtn: {
-    flex: 1,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#111827',
-    paddingVertical: 8,
+    minHeight: 42,
+    minWidth: 132,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  tabBtnActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  tabBtnActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   tabBtnLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  tabBtnActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
-  tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 12 },
+  tabBtnActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
+  tabText: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
   tabTextLight: { color: '#334155' },
-  tabTextActive: { color: '#bae6fd' },
-  tabTextActiveLight: { color: '#0369a1' },
+  tabTextActive: { color: '#eff6ff' },
+  tabTextActiveLight: { color: '#235ea9' },
   filtersScroll: { maxHeight: 44, marginBottom: 8 },
   chipsRow: { flexDirection: 'row', gap: 6 },
   filterChip: {
@@ -320,13 +316,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: '#0b1220',
   },
-  filterChipActive: { borderColor: '#0ea5e9', backgroundColor: '#0b2942' },
+  filterChipActive: { borderColor: '#235ea9', backgroundColor: '#235ea9' },
   filterChipLight: { borderColor: '#cbd5e1', backgroundColor: '#ffffff' },
-  filterChipActiveLight: { borderColor: '#0284c7', backgroundColor: '#e0f2fe' },
+  filterChipActiveLight: { borderColor: '#235ea9', backgroundColor: '#e6f0ff' },
   filterChipText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
   filterChipTextLight: { color: '#334155' },
-  filterChipTextActive: { color: '#bae6fd' },
-  filterChipTextActiveLight: { color: '#0369a1' },
+  filterChipTextActive: { color: '#eff6ff' },
+  filterChipTextActiveLight: { color: '#235ea9' },
   card: {
     backgroundColor: '#111827',
     borderWidth: 1,
@@ -351,6 +347,46 @@ const styles = StyleSheet.create({
   badgeLight: { backgroundColor: '#f8fafc' },
   badgeText: { color: '#e2e8f0', fontSize: 11, fontWeight: '700' },
   badgeTextLight: { color: '#334155' },
+  kardexRows: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    paddingTop: 8,
+    gap: 4,
+  },
+  kardexRowsLight: {
+    borderTopColor: '#dbe4ef',
+  },
+  kardexRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  kardexLabel: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  kardexLabelLight: {
+    color: '#64748b',
+  },
+  kardexValue: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  kardexValueLight: {
+    color: '#334155',
+  },
+  qtyPositive: {
+    color: '#16a34a',
+    fontWeight: '700',
+  },
+  qtyNegative: {
+    color: '#dc2626',
+    fontWeight: '700',
+  },
   note: { color: '#94a3b8', marginTop: 8, fontSize: 12 },
   noteLight: { color: '#64748b' },
 });

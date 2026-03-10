@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemeMode } from '../lib/themeMode';
@@ -38,21 +39,30 @@ export default function AboutScreen({ tenant, userProfile, offlineMode }) {
       </View>
 
       <View style={[styles.card, isLightTheme && styles.cardLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Sistema</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="hardware-chip-outline" size={15} color={isLightTheme ? '#235ea9' : '#8ec5ff'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Sistema</Text>
+        </View>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Version: 1.0.0</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Entorno: Mobile</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Actualizacion: Marzo 2026</Text>
       </View>
 
       <View style={[styles.card, isLightTheme && styles.cardLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Negocio</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="business-outline" size={15} color={isLightTheme ? '#235ea9' : '#8ec5ff'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Negocio</Text>
+        </View>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Empresa: {tenant?.tenant_name || '-'}</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Usuario: {userProfile?.full_name || '-'}</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Moneda: {tenant?.currency_code || 'COP'}</Text>
       </View>
 
       <View style={[styles.card, isLightTheme && styles.cardLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Estadisticas</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="bar-chart-outline" size={15} color={isLightTheme ? '#235ea9' : '#8ec5ff'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Estadisticas</Text>
+        </View>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Productos: {stats.products}</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Ventas: {stats.sales}</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>Clientes: {stats.customers}</Text>
@@ -60,7 +70,10 @@ export default function AboutScreen({ tenant, userProfile, offlineMode }) {
       </View>
 
       <View style={[styles.card, isLightTheme && styles.cardLight]}>
-        <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Capacidades</Text>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="sparkles-outline" size={15} color={isLightTheme ? '#235ea9' : '#8ec5ff'} />
+          <Text style={[styles.sectionTitle, isLightTheme && styles.sectionTitleLight]}>Capacidades</Text>
+        </View>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>- Punto de venta e inventario multi-sede</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>- Caja, reportes y configuracion por tenant</Text>
         <Text style={[styles.line, isLightTheme && styles.lineLight]}>- Modo offline con sincronizacion diferida</Text>
@@ -73,8 +86,8 @@ export default function AboutScreen({ tenant, userProfile, offlineMode }) {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#0b0f14', padding: 12 },
-  containerLight: { backgroundColor: '#f8fafc' },
+  container: { backgroundColor: '#060b16', padding: 12 },
+  containerLight: { backgroundColor: '#edf2fb' },
   brandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -94,13 +107,19 @@ const styles = StyleSheet.create({
   subtitleLight: { color: '#475569' },
   card: {
     borderWidth: 1,
-    borderColor: '#1f2937',
-    borderRadius: 12,
-    backgroundColor: '#111827',
+    borderColor: '#223a5e',
+    borderRadius: 14,
+    backgroundColor: '#0f182b',
     padding: 12,
     marginBottom: 8,
   },
-  cardLight: { borderColor: '#dbe4ef', backgroundColor: '#ffffff' },
+  cardLight: { borderColor: '#d5e2f4', backgroundColor: '#ffffff' },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   sectionTitle: { color: '#e2e8f0', fontWeight: '700', marginBottom: 4 },
   sectionTitleLight: { color: '#0f172a' },
   line: { color: '#cbd5e1', marginTop: 2, fontSize: 13 },
