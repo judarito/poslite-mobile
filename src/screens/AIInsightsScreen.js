@@ -4,10 +4,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useThemeMode } from '../lib/themeMode';
 import {
   AI_INSIGHT_CATALOG,
-  resolveAiInsightByText,
+  resolveAiInsightByTextWithFallback,
   runAiInsight,
   runAllAiInsights,
 } from '../services/aiInsights.service';
+import { generateInsightNarrative } from '../services/aiInsightNarrative.service';
 
 function getToneStyle(tone) {
   if (tone === 'danger') return { borderColor: '#7f1d1d', textColor: '#fecaca', bgColor: '#3f1111' };
@@ -18,6 +19,7 @@ function getToneStyle(tone) {
 
 function normalizeResult(result) {
   return {
+    insightId: result?.insightId || null,
     title: result?.title || 'Analisis IA',
     summary: result?.summary || 'Sin resumen disponible.',
     highlights: Array.isArray(result?.highlights) ? result.highlights : [],
@@ -37,6 +39,8 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
   const [error, setError] = useState('');
   const [queryRouting, setQueryRouting] = useState(null);
   const [resultById, setResultById] = useState({});
+  const [narrativeById, setNarrativeById] = useState({});
+  const [loadingNarrativeId, setLoadingNarrativeId] = useState('');
 
   const orderedCatalog = useMemo(() => AI_INSIGHT_CATALOG, []);
 
@@ -56,7 +60,7 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
       }
       setResultById((prev) => ({
         ...prev,
-        [insightId]: normalizeResult(result.data),
+        [insightId]: normalizeResult({ ...result.data, insightId }),
       }));
     } finally {
       setLoadingId('');
@@ -79,7 +83,7 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
       const next = {};
       result.data.forEach((entry) => {
         if (!entry?.success || !entry?.data || !entry?.insightId) return;
-        next[entry.insightId] = normalizeResult(entry.data);
+        next[entry.insightId] = normalizeResult({ ...entry.data, insightId: entry.insightId });
       });
       if (Object.keys(next).length === 0) {
         setError('No se pudo ejecutar ningun analisis IA. Verifica conexion o cache local.');
@@ -91,14 +95,75 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
     }
   };
 
-  const runByQuery = async () => {
-    const parsed = resolveAiInsightByText(queryText);
-    setQueryRouting(parsed);
-    if (!parsed?.insightId) {
-      setError('No pude inferir el tipo de analisis. Prueba con: inventario, compras, ventas, caja, cartera.');
+  const runNarrative = async (insightId) => {
+    if (!tenant?.tenant_id || !insightId) return;
+
+    let base = resultById[insightId] || null;
+    if (!base) {
+      const baseRun = await runAiInsight({
+        tenantId: tenant.tenant_id,
+        insightId,
+        offlineMode,
+      });
+      if (baseRun.success && baseRun?.data) {
+        base = normalizeResult({ ...baseRun.data, insightId });
+        setResultById((prev) => ({
+          ...prev,
+          [insightId]: base,
+        }));
+      }
+    }
+    if (!base) {
+      setError('Primero ejecuta el analisis base para generar narrativa IA.');
       return;
     }
-    await runSingle(parsed.insightId);
+
+    setLoadingNarrativeId(insightId);
+    setError('');
+    try {
+      const response = await generateInsightNarrative({
+        tenantId: tenant.tenant_id,
+        insight: {
+          insightId,
+          title: base.title,
+          summary: base.summary,
+          highlights: base.highlights,
+          findings: base.findings,
+          recommendations: base.recommendations,
+        },
+        offlineMode,
+      });
+      if (!response.success || !response?.data) {
+        setError(response.error || 'No se pudo generar narrativa IA.');
+        return;
+      }
+
+      setNarrativeById((prev) => ({
+        ...prev,
+        [insightId]: response.data,
+      }));
+    } finally {
+      setLoadingNarrativeId('');
+    }
+  };
+
+  const runByQuery = async () => {
+    if (!tenant?.tenant_id) return;
+    setError('');
+    const routed = await resolveAiInsightByTextWithFallback({
+      tenantId: tenant.tenant_id,
+      queryText,
+      offlineMode,
+    });
+
+    if (!routed.success || !routed?.data?.insightId) {
+      setQueryRouting(null);
+      setError(routed.error || 'No pude inferir el tipo de analisis. Prueba con: inventario, compras, ventas, caja, cartera.');
+      return;
+    }
+
+    setQueryRouting(routed.data);
+    await runSingle(routed.data.insightId);
   };
 
   return (
@@ -142,6 +207,7 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
           <Text style={[styles.queryHint, isLightTheme && styles.queryHintLight]}>
             Ruta sugerida: {orderedCatalog.find((x) => x.id === queryRouting.insightId)?.title || queryRouting.insightId} (
             {Math.round(Number(queryRouting.confidence || 0) * 100)}%)
+            {queryRouting?.engine?.source ? ` | ${queryRouting.engine.source}` : ''}
           </Text>
         ) : null}
       </View>
@@ -151,6 +217,8 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
       {orderedCatalog.map((item) => {
         const result = resultById[item.id] || null;
         const running = loadingId === item.id;
+        const runningNarrative = loadingNarrativeId === item.id;
+        const narrative = narrativeById[item.id] || null;
         return (
           <View
             key={item.id}
@@ -182,6 +250,27 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
             {result ? (
               <View style={[styles.resultWrap, isLightTheme && styles.resultWrapLight]}>
                 <Text style={[styles.resultSummary, isLightTheme && styles.resultSummaryLight]}>{result.summary}</Text>
+
+                <View style={styles.narrativeActionsRow}>
+                  <Pressable
+                    style={[
+                      styles.narrativeBtn,
+                      isLightTheme && styles.narrativeBtnLight,
+                      runningNarrative && styles.btnDisabled,
+                    ]}
+                    onPress={() => runNarrative(item.id)}
+                    disabled={runningNarrative}
+                  >
+                    {runningNarrative ? (
+                      <ActivityIndicator size="small" color="#eff6ff" />
+                    ) : (
+                      <>
+                        <Ionicons name="chatbubble-ellipses-outline" size={14} style={styles.narrativeBtnIcon} />
+                        <Text style={styles.narrativeBtnText}>Explicar con IA</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
 
                 <View style={styles.metricsRow}>
                   {result.highlights.map((metric, idx) => {
@@ -226,6 +315,45 @@ export default function AIInsightsScreen({ tenant, offlineMode }) {
                     </Text>
                   ))}
                 </View>
+                ) : null}
+
+                {narrative ? (
+                  <View style={[styles.narrativeCard, isLightTheme && styles.narrativeCardLight]}>
+                    <Text style={[styles.narrativeTitle, isLightTheme && styles.narrativeTitleLight]}>Narrativa IA</Text>
+                    {narrative?.narrative_summary ? (
+                      <Text style={[styles.narrativeSummary, isLightTheme && styles.narrativeSummaryLight]}>
+                        {narrative.narrative_summary}
+                      </Text>
+                    ) : null}
+                    {Array.isArray(narrative?.actions) && narrative.actions.length > 0 ? (
+                      <View style={styles.narrativeBlock}>
+                        <Text style={[styles.narrativeBlockTitle, isLightTheme && styles.narrativeBlockTitleLight]}>
+                          Acciones sugeridas
+                        </Text>
+                        {narrative.actions.map((line, idx) => (
+                          <Text key={`${item.id}-narr-act-${idx}`} style={[styles.narrativeLine, isLightTheme && styles.narrativeLineLight]}>
+                            - {line}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                    {Array.isArray(narrative?.risks) && narrative.risks.length > 0 ? (
+                      <View style={styles.narrativeBlock}>
+                        <Text style={[styles.narrativeBlockTitle, isLightTheme && styles.narrativeBlockTitleLight]}>
+                          Riesgos
+                        </Text>
+                        {narrative.risks.map((line, idx) => (
+                          <Text key={`${item.id}-narr-risk-${idx}`} style={[styles.narrativeLine, isLightTheme && styles.narrativeLineLight]}>
+                            - {line}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                    <Text style={[styles.narrativeMeta, isLightTheme && styles.narrativeMetaLight]}>
+                      Fuente narrativa: {narrative?.engine?.source || 'desconocida'}
+                      {narrative?.confidence != null ? ` | Confianza ${Math.round(Number(narrative.confidence || 0) * 100)}%` : ''}
+                    </Text>
+                  </View>
                 ) : null}
 
                 <Text style={[styles.engineLine, isLightTheme && styles.engineLineLight]}>
@@ -472,6 +600,93 @@ const styles = StyleSheet.create({
   },
   resultSummaryLight: {
     color: '#1e3a8a',
+  },
+  narrativeActionsRow: {
+    marginBottom: 8,
+  },
+  narrativeBtn: {
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: '#13213a',
+    borderRadius: 8,
+    minHeight: 34,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  narrativeBtnLight: {
+    borderColor: '#cfddf0',
+    backgroundColor: '#f1f6ff',
+  },
+  narrativeBtnIcon: {
+    color: '#93c5fd',
+  },
+  narrativeBtnText: {
+    color: '#dbeafe',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  narrativeCard: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#3b2f5b',
+    borderRadius: 10,
+    backgroundColor: '#17132a',
+    padding: 9,
+  },
+  narrativeCardLight: {
+    borderColor: '#d7d2ef',
+    backgroundColor: '#f7f4ff',
+  },
+  narrativeTitle: {
+    color: '#d7d2ff',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  narrativeTitleLight: {
+    color: '#4c3da8',
+  },
+  narrativeSummary: {
+    color: '#ebe8ff',
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  narrativeSummaryLight: {
+    color: '#2b2357',
+  },
+  narrativeBlock: {
+    marginTop: 6,
+  },
+  narrativeBlockTitle: {
+    color: '#c4baff',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  narrativeBlockTitleLight: {
+    color: '#5b4fb8',
+  },
+  narrativeLine: {
+    color: '#ddd6fe',
+    fontSize: 12,
+    marginBottom: 3,
+  },
+  narrativeLineLight: {
+    color: '#334155',
+  },
+  narrativeMeta: {
+    marginTop: 6,
+    color: '#a5b4fc',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  narrativeMetaLight: {
+    color: '#475569',
   },
   metricsRow: {
     flexDirection: 'row',

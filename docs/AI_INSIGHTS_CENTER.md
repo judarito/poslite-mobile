@@ -23,16 +23,24 @@ Concentrar en mobile 8 analisis operativos con enfoque accionable:
   - Analitica deterministica por insight.
   - Cache local por insight usando `offlineCache.saveSimpleCache/getSimpleCache`.
   - Parser deterministico de consulta natural (`resolveAiInsightByText`).
+  - Motor de ruteo natural con fallback (`resolveAiInsightByTextWithFallback`):
+    - `cache_lookup -> deterministic_parser -> local_llm -> cloud_llm`
+    - En offline: `cache_lookup -> deterministic_parser -> local_llm` (sin cloud).
+- Servicio de narrativa IA: `src/services/aiInsightNarrative.service.js`
+  - Toma el resultado deterministico como contexto.
+  - Genera resumen narrativo y acciones por fallback `local llm -> cloud llm`.
+  - Si falla red/LLM, usa cache local de narrativa por insight.
 - UI: `src/screens/AIInsightsScreen.js`
   - Ejecutar insight individual.
   - Ejecutar los 8 insights.
   - Consulta natural para enrutar al insight correcto.
-  - Visualizacion de KPIs, hallazgos y recomendaciones.
+  - Visualizacion de KPIs, hallazgos, recomendaciones y narrativa IA.
 
 ## Modo offline
 
 - Si `offlineMode=true`, el centro IA intenta devolver el ultimo resultado cacheado del insight.
 - Si no existe cache para ese insight, devuelve error de disponibilidad offline.
+- Para narrativa IA aplica la misma regla: cache de narrativa por insight.
 
 ## Fuentes de datos por insight
 
@@ -44,5 +52,5 @@ Concentrar en mobile 8 analisis operativos con enfoque accionable:
 
 ## Notas
 
-- Esta version prioriza analisis deterministico y accionable.
-- Siguiente fase sugerida: narrativas LLM (local/cloud) sobre los resultados ya calculados.
+- Los valores numericos del negocio se mantienen deterministas.
+- La capa LLM solo agrega interpretacion, prioridades y lenguaje natural.

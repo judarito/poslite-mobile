@@ -5,9 +5,23 @@ import { listCashSessions } from './cashMenu.service';
 import { listStockBalances, listProductionOrders } from './inventoryCatalog.service';
 import { getDashboardSummary } from './reports.service';
 import { listThirdParties } from './thirdParties.service';
+import { ensureEmbeddedModelReady } from './commandEngine/embeddedModel.service';
+import { hashNormalizedText, normalizeCommandText } from './commandEngine/normalize.service';
 
 const COMPLETED_SALE_STATUSES = ['COMPLETED', 'PARTIAL_RETURN', 'RETURNED'];
 const OPEN_PRODUCTION_STATUSES = new Set(['PLANNED', 'IN_PROGRESS', 'PAUSED', 'DRAFT']);
+const TEXT_EDGE_FUNCTION = process.env.EXPO_PUBLIC_DEEPSEEK_TEXT_EDGE_FUNCTION || 'deepseek-proxy';
+const DEFAULT_TEXT_MODEL = process.env.EXPO_PUBLIC_DEEPSEEK_TEXT_MODEL || 'deepseek-chat';
+const LOCAL_INSIGHTS_LLM_ENDPOINT = process.env.EXPO_PUBLIC_LOCAL_LLM_INSIGHTS_URL || '';
+const DEFAULT_TIMEOUT_MS = 2200;
+const MIN_EMBEDDED_TIMEOUT_MS = 8000;
+const DEFAULT_CONTEXT = Number(process.env.EXPO_PUBLIC_EMBEDDED_LLM_CONTEXT_SIZE || 2048);
+
+let routingRuntimeModuleCache = null;
+let routingContextCache = {
+  modelPath: null,
+  context: null,
+};
 
 export const AI_INSIGHT_CATALOG = [
   {
@@ -155,6 +169,437 @@ function sumSales(rows) {
 
 function insightCacheKey(tenantId, insightId) {
   return `ai-insight:${tenantId || 'na'}:${insightId}`;
+}
+
+function queryRoutingCacheKey(tenantId, textHash) {
+  return `ai-insight-route:${tenantId || 'na'}:${textHash || 'na'}`;
+}
+
+function parseJsonSafe(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_e) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch (_err) {
+      return null;
+    }
+  }
+}
+
+function clampConfidence(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Number(Math.max(0, Math.min(1, parsed)).toFixed(3));
+}
+
+function resolveLocalLlmMode() {
+  const mode = String(process.env.EXPO_PUBLIC_LOCAL_LLM_MODE || 'auto').trim().toLowerCase();
+  if (mode === 'embedded') return 'embedded';
+  if (mode === 'endpoint') return 'endpoint';
+  return 'auto';
+}
+
+function resolveTimeoutMs(mode = 'auto') {
+  const parsed = Number(process.env.EXPO_PUBLIC_LOCAL_LLM_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
+  const resolved = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+  if (mode === 'embedded' || mode === 'auto') {
+    return Math.max(MIN_EMBEDDED_TIMEOUT_MS, resolved);
+  }
+  return resolved;
+}
+
+function withTimeout(promise, timeoutMs) {
+  const timeout = Number.isFinite(Number(timeoutMs))
+    ? Math.max(1200, Number(timeoutMs))
+    : MIN_EMBEDDED_TIMEOUT_MS;
+
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const id = setTimeout(() => {
+        clearTimeout(id);
+        reject(new Error(`Embedded insights route timeout (${timeout}ms).`));
+      }, timeout);
+    }),
+  ]);
+}
+
+function loadRoutingRuntimeModule() {
+  if (routingRuntimeModuleCache) return routingRuntimeModuleCache;
+  try {
+    const runtime = require('llama.rn');
+    routingRuntimeModuleCache = runtime;
+    return runtime;
+  } catch (_e) {
+    routingRuntimeModuleCache = null;
+    return null;
+  }
+}
+
+async function ensureRoutingContext(modelPath) {
+  if (routingContextCache.context && routingContextCache.modelPath === modelPath) {
+    return { success: true, context: routingContextCache.context };
+  }
+
+  const runtime = loadRoutingRuntimeModule();
+  if (!runtime) {
+    return {
+      success: false,
+      error: 'Runtime llama.rn no disponible para ruteo IA.',
+    };
+  }
+
+  try {
+    if (routingContextCache.context?.release) {
+      await routingContextCache.context.release();
+    }
+  } catch (_e) {
+    // no-op
+  }
+
+  try {
+    const initLlama = runtime?.initLlama || runtime?.default?.initLlama;
+    if (typeof initLlama !== 'function') {
+      return { success: false, error: 'llama.rn no expone initLlama().' };
+    }
+
+    const context = await initLlama({
+      model: modelPath,
+      n_ctx: DEFAULT_CONTEXT,
+      n_gpu_layers: 0,
+      embedding: false,
+    });
+
+    routingContextCache = {
+      modelPath,
+      context,
+    };
+
+    return { success: true, context };
+  } catch (error) {
+    return {
+      success: false,
+      error: String(error?.message || 'No se pudo inicializar contexto embedded para ruteo.'),
+    };
+  }
+}
+
+function normalizeInsightId(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const match = AI_INSIGHT_CATALOG.find((item) => item.id === text);
+  return match ? match.id : null;
+}
+
+function normalizeInsightRouting(payload = {}) {
+  const insightId = normalizeInsightId(payload?.insight_id || payload?.insightId || payload?.intent?.insight_id);
+  return {
+    insightId,
+    confidence: clampConfidence(payload?.confidence),
+    summary: payload?.summary ? String(payload.summary).trim() : null,
+    model: payload?.model || null,
+    usage: payload?.usage || null,
+  };
+}
+
+function hasUsefulInsightRouting(payload = {}) {
+  return Boolean(normalizeInsightId(payload?.insightId));
+}
+
+function extractCompletionText(result) {
+  const text =
+    result?.text ||
+    result?.content ||
+    result?.message?.content ||
+    result?.completion ||
+    '';
+  return String(text || '').trim();
+}
+
+function buildRoutingMessages(queryText) {
+  const catalogHints = AI_INSIGHT_CATALOG
+    .map((item) => `- ${item.id}: ${item.title} (${item.subtitle})`)
+    .join('\n');
+
+  return [
+    {
+      role: 'system',
+      content:
+        'Eres un parser de ruteo para modulo Centro IA de un POS. Debes responder SOLO JSON valido.',
+    },
+    {
+      role: 'user',
+      content: `Clasifica la consulta del usuario hacia uno de estos insights:
+${catalogHints}
+
+Responde JSON EXACTO:
+{
+  "insight_id": "inventory_watch|purchase_advisor|sales_analyst|cash_audit|portfolio_collector|production_planner|thirdparty_segmenter|executive_brief|null",
+  "confidence": number,
+  "summary": "string|null"
+}
+
+Reglas:
+- confidence entre 0 y 1.
+- Si no existe match claro, usa insight_id=null.
+- No inventes insights fuera del catalogo.
+- Responde SOLO JSON.
+
+Consulta:
+"""${String(queryText || '').slice(0, 2500)}"""`,
+    },
+  ];
+}
+
+async function parseRoutingWithEmbeddedLlm({ tenantId, queryText, timeoutMs }) {
+  if (!tenantId) return { success: false, skipped: true, reason: 'tenantId requerido.' };
+
+  const runtime = loadRoutingRuntimeModule();
+  if (!runtime) {
+    return { success: false, skipped: true, reason: 'llama.rn no disponible.' };
+  }
+
+  const modelReady = await ensureEmbeddedModelReady();
+  if (!modelReady.success || !modelReady.path) {
+    return {
+      success: false,
+      skipped: true,
+      reason: modelReady.error || 'Modelo embebido no disponible.',
+    };
+  }
+
+  const contextResult = await ensureRoutingContext(modelReady.path);
+  if (!contextResult.success || !contextResult.context) {
+    return {
+      success: false,
+      skipped: false,
+      reason: contextResult.error || 'No se pudo inicializar contexto embedded para ruteo.',
+    };
+  }
+
+  const completionFn =
+    (typeof contextResult.context?.completion === 'function' && contextResult.context.completion.bind(contextResult.context)) ||
+    (typeof contextResult.context?.chatCompletion === 'function' && contextResult.context.chatCompletion.bind(contextResult.context));
+
+  if (!completionFn) {
+    return {
+      success: false,
+      skipped: false,
+      reason: 'Contexto llama.rn no expone completion/chatCompletion.',
+    };
+  }
+
+  try {
+    const rawResult = await withTimeout(
+      completionFn({
+        messages: buildRoutingMessages(queryText),
+        n_predict: 100,
+        temperature: 0.1,
+        response_format: {
+          type: 'json_object',
+        },
+      }),
+      timeoutMs,
+    );
+
+    const parsed = parseJsonSafe(extractCompletionText(rawResult));
+    const normalized = normalizeInsightRouting(parsed || {});
+    if (!hasUsefulInsightRouting(normalized)) {
+      return { success: false, skipped: false, reason: 'LLM local no produjo ruteo util.' };
+    }
+
+    return {
+      success: true,
+      data: {
+        ...normalized,
+        model: 'qwen2.5-1.5b-embedded',
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      skipped: false,
+      reason: String(error?.message || 'Error ejecutando LLM local para ruteo.'),
+    };
+  }
+}
+
+async function parseRoutingWithEndpointLlm({ tenantId, queryText }) {
+  if (!tenantId) return { success: false, skipped: true, reason: 'tenantId requerido.' };
+
+  const endpoint = String(LOCAL_INSIGHTS_LLM_ENDPOINT || '').trim();
+  if (!endpoint) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'Local insights endpoint no configurado (EXPO_PUBLIC_LOCAL_LLM_INSIGHTS_URL).',
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = resolveTimeoutMs('endpoint');
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        task: 'insight_route',
+        query_text: String(queryText || ''),
+        catalog: AI_INSIGHT_CATALOG.map((item) => ({ id: item.id, title: item.title, subtitle: item.subtitle })),
+      }),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch (_e) {
+      parsed = null;
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        skipped: false,
+        reason: `Local insights endpoint HTTP ${response.status}`,
+      };
+    }
+
+    const normalized = normalizeInsightRouting(parsed?.data || parsed || {});
+    if (!hasUsefulInsightRouting(normalized)) {
+      return {
+        success: false,
+        skipped: false,
+        reason: 'Local insights endpoint no devolvio ruteo valido.',
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        ...normalized,
+        model: parsed?.model || 'local-llm-insights-endpoint',
+      },
+    };
+  } catch (error) {
+    const isAbort = String(error?.name || '').toLowerCase() === 'aborterror';
+    return {
+      success: false,
+      skipped: false,
+      reason: isAbort ? `Local insights endpoint timeout (${timeoutMs}ms)` : 'Local insights endpoint error',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function parseRoutingWithLocalLlm({ tenantId, queryText }) {
+  const mode = resolveLocalLlmMode();
+  const timeoutMs = resolveTimeoutMs(mode);
+
+  if (mode === 'embedded') {
+    return parseRoutingWithEmbeddedLlm({ tenantId, queryText, timeoutMs });
+  }
+
+  if (mode === 'endpoint') {
+    return parseRoutingWithEndpointLlm({ tenantId, queryText });
+  }
+
+  const embedded = await parseRoutingWithEmbeddedLlm({
+    tenantId,
+    queryText,
+    timeoutMs,
+  });
+  if (embedded.success) return embedded;
+
+  const endpoint = await parseRoutingWithEndpointLlm({
+    tenantId,
+    queryText,
+  });
+  if (endpoint.success) return endpoint;
+
+  return {
+    success: false,
+    skipped: false,
+    reason: `Local insights route auto sin resultado. embedded=${embedded.reason || 'na'}; endpoint=${endpoint.reason || 'na'}`,
+  };
+}
+
+async function extractInvokeError(error) {
+  const fragments = [];
+  if (error?.message) fragments.push(String(error.message));
+
+  const context = error?.context;
+  if (!context) return fragments.join(' | ') || 'Error desconocido';
+
+  try {
+    const response = typeof context.clone === 'function' ? context.clone() : context;
+    if (response?.status) fragments.push(`HTTP ${response.status}`);
+
+    let bodyJson = null;
+    if (typeof response?.json === 'function') {
+      bodyJson = await response.json().catch(() => null);
+    }
+    if (bodyJson?.error) fragments.push(String(bodyJson.error));
+    if (bodyJson?.details) fragments.push(String(bodyJson.details));
+
+    if (!bodyJson && typeof response?.text === 'function') {
+      const bodyText = await response.text().catch(() => '');
+      if (bodyText?.trim()) fragments.push(bodyText.trim().slice(0, 280));
+    }
+  } catch (_e) {
+    // no-op
+  }
+
+  const unique = Array.from(new Set(fragments.filter(Boolean)));
+  return unique.join(' | ') || 'Error desconocido';
+}
+
+async function parseRoutingWithCloudLlm({ tenantId, queryText }) {
+  if (!tenantId) return { success: false, error: 'tenantId es requerido.' };
+
+  const { data, error } = await supabase.functions.invoke(TEXT_EDGE_FUNCTION, {
+    body: {
+      model: DEFAULT_TEXT_MODEL,
+      temperature: 0.1,
+      max_tokens: 350,
+      messages: buildRoutingMessages(queryText),
+    },
+  });
+
+  if (error) {
+    const details = await extractInvokeError(error);
+    return {
+      success: false,
+      error: `Error invocando Edge Function "${TEXT_EDGE_FUNCTION}": ${details}.`,
+    };
+  }
+
+  const parsed = parseJsonSafe(data?.content);
+  const normalized = normalizeInsightRouting(parsed || {});
+  if (!hasUsefulInsightRouting(normalized)) {
+    return { success: false, error: 'Cloud LLM no devolvio ruteo valido.' };
+  }
+
+  return {
+    success: true,
+    data: {
+      ...normalized,
+      model: data?.model || null,
+      usage: data?.usage || null,
+    },
+  };
 }
 
 async function analyzeInventoryWatch({ tenantId }) {
@@ -782,6 +1227,121 @@ export function resolveAiInsightByText(queryText) {
   return {
     insightId: best.insightId,
     confidence: Number(Math.min(0.95, 0.35 + best.score * 0.18).toFixed(2)),
+  };
+}
+
+export async function resolveAiInsightByTextWithFallback({
+  tenantId,
+  queryText,
+  offlineMode = false,
+  skipCache = false,
+  skipDeterministic = false,
+  skipLocalLlm = false,
+  forceCloud = false,
+}) {
+  if (!tenantId) {
+    return { success: false, error: 'tenantId es requerido para ruteo IA.' };
+  }
+
+  const text = String(queryText || '').trim();
+  if (!text) {
+    return { success: false, error: 'Escribe una consulta para enrutar analisis IA.' };
+  }
+
+  const normalizedText = normalizeCommandText(text);
+  const textHash = hashNormalizedText(normalizedText);
+  const cacheKey = queryRoutingCacheKey(tenantId, textHash);
+  const fallbackChain = [];
+  const shouldSkipCache = Boolean(skipCache || forceCloud);
+  const shouldSkipDeterministic = Boolean(skipDeterministic || forceCloud);
+  const shouldSkipLocalLlm = Boolean(skipLocalLlm || forceCloud);
+
+  if (!shouldSkipCache) {
+    fallbackChain.push('cache_lookup');
+    const cached = await getSimpleCache(cacheKey);
+    if (cached?.value?.insightId) {
+      return {
+        success: true,
+        data: {
+          ...cached.value,
+          engine: {
+            source: 'local_cache',
+            fallback_chain: fallbackChain,
+            cachedAt: cached.cachedAt || null,
+          },
+        },
+      };
+    }
+  }
+
+  if (!shouldSkipDeterministic) {
+    fallbackChain.push('deterministic_parser');
+    const deterministic = resolveAiInsightByText(text);
+    if (deterministic?.insightId) {
+      const routed = {
+        insightId: deterministic.insightId,
+        confidence: clampConfidence(deterministic.confidence),
+        summary: 'Ruteo por parser deterministico.',
+        engine: {
+          source: 'deterministic_parser',
+          fallback_chain: fallbackChain,
+          model: 'deterministic-insight-router-v1',
+        },
+      };
+      await saveSimpleCache(cacheKey, routed);
+      return { success: true, data: routed };
+    }
+  }
+
+  if (!shouldSkipLocalLlm) {
+    fallbackChain.push('local_llm');
+    const local = await parseRoutingWithLocalLlm({
+      tenantId,
+      queryText: text,
+    });
+    if (local.success && local?.data?.insightId) {
+      const routed = {
+        ...local.data,
+        engine: {
+          source: 'local_llm',
+          fallback_chain: fallbackChain,
+          model: local?.data?.model || 'local-llm',
+        },
+      };
+      await saveSimpleCache(cacheKey, routed);
+      return { success: true, data: routed };
+    }
+  }
+
+  if (offlineMode) {
+    return {
+      success: false,
+      error: 'Sin conexion: parser local no logro inferir consulta y no se puede escalar a cloud.',
+    };
+  }
+
+  fallbackChain.push('cloud_llm');
+  const cloud = await parseRoutingWithCloudLlm({
+    tenantId,
+    queryText: text,
+  });
+
+  if (cloud.success && cloud?.data?.insightId) {
+    const routed = {
+      ...cloud.data,
+      engine: {
+        source: 'cloud_llm',
+        fallback_chain: fallbackChain,
+        model: cloud?.data?.model || null,
+      },
+    };
+    await saveSimpleCache(cacheKey, routed);
+    return { success: true, data: routed };
+  }
+
+  return {
+    success: false,
+    error: cloud.error || 'No se pudo enrutar la consulta IA en cache/parser/local/cloud.',
   };
 }
 
